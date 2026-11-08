@@ -7,3 +7,4 @@ __pycache__/
 .env
 data/*.sqlite
 audit/*.jsonl
+results/voice_probe/

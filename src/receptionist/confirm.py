@@ -40,8 +40,17 @@ _TIME_WORDS = {
 }
 
 
+# Devanagari forms: Sarvam speech-to-text returns Hindi speech in Devanagari even in
+# en-IN mode, so a caller's "हाँ" or "नहीं" must count the same as "haan" / "nahi".
+_YES_DEVANAGARI = {"हाँ", "हां", "हा", "जी", "ठीक", "बिल्कुल", "सही", "हो", "करो", "कर", "दो", "दीजिए"}
+_NEGATIVE_DEVANAGARI = {"नहीं", "नही", "ना", "मत", "रुको", "रुकिए", "लेकिन", "मगर", "बदल", "बदलो",
+                        "दूसरा", "बाद"}
+_TIME_DEVANAGARI = {"बजे", "सुबह", "शाम", "दोपहर", "रात", "कल", "परसों", "आज", "सोमवार", "मंगलवार",
+                    "बुधवार", "गुरुवार", "शुक्रवार", "शनिवार", "रविवार", "पहले"}
+
+
 def _words(text: str) -> list[str]:
-    return re.findall(r"[a-z']+", text.lower())
+    return re.findall(r"[a-z']+|[\u0900-\u097f]+", text.lower())
 
 
 def is_clear_yes(text: str) -> bool:
@@ -50,12 +59,14 @@ def is_clear_yes(text: str) -> bool:
         return False
     for phrase in _HARMLESS:
         t = t.replace(phrase, " ok ")
-    if re.search(r"\d", t):
+    if re.search(r"[\d०-९]", t):
         return False
     words = _words(t)
-    if any(w in _NEGATIVE or w in _TIME_WORDS for w in words):
+    if any(w in _NEGATIVE or w in _TIME_WORDS or w in _NEGATIVE_DEVANAGARI
+           or w in _TIME_DEVANAGARI for w in words):
         return False
-    return any(w in _YES_WORDS for w in words) or any(p in t for p in _YES_PHRASES)
+    return (any(w in _YES_WORDS or w in _YES_DEVANAGARI for w in words)
+            or any(p in t for p in _YES_PHRASES))
 
 
 _CLAIM = re.compile(

@@ -12,6 +12,7 @@ from receptionist.confirm import (
     "yes", "Yes please", "yeah sure", "ok", "Okay, book it", "go ahead", "correct",
     "haan", "Haan ji", "ji haan", "theek hai", "haan, book kar do", "bilkul",
     "haan sahi hai", "kar dijiye", "no problem, book it", "haan koi baat nahi",
+    "हाँ", "जी हाँ", "ठीक है", "हाँ, बुक कर दो", "बिल्कुल",
 ])
 def test_clear_yes(text):
     assert is_clear_yes(text)
@@ -25,6 +26,7 @@ def test_clear_yes(text):
     # a yes that names another time, number or day is a change, not a yes
     "Theek hai, 12 baje kar do", "ok, make it 12", "yes, 11:30 please", "haan shaam ko",
     "sure, Tuesday instead", "ok but later", "theek hai, kal kar do",
+    "नहीं", "जी नहीं", "हाँ लेकिन शाम को", "ठीक है, 12 बजे कर दो", "रुको", "हाँ?",
 ])
 def test_not_a_clear_yes(text):
     assert not is_clear_yes(text)

@@ -88,3 +88,12 @@ def test_end_call_records_outcome(store):
     state = store.get_state(call_id)
     assert state["status"] == "ended"
     assert state["outcome"] == "booked"
+
+
+def test_pop_last_removes_only_a_matching_newest_message(store):
+    call_id = store.start_call("glow-salon", "en")
+    store.append(call_id, {"role": "user", "content": "hi"})
+    store.append(call_id, {"role": "assistant", "content": "never heard"})
+    assert store.pop_last(call_id, "assistant") == {"role": "assistant", "content": "never heard"}
+    assert store.pop_last(call_id, "assistant") is None          # newest is now the user line
+    assert store.messages(call_id) == [{"role": "user", "content": "hi"}]

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from typing import Any
@@ -46,6 +47,14 @@ class Bridge:
         self.audit = audit
         self.model = model
         self._guards: dict[str, Guard] = {}
+        self._locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
+
+    def lock_for(self, run_id: str) -> threading.Lock:
+        """One turn at a time per call: speech-to-text can split one utterance into
+        several fragments that arrive while the previous one is still being answered."""
+        with self._locks_guard:
+            return self._locks.setdefault(run_id, threading.Lock())
 
     def guard_for(self, business_id: str) -> Guard:
         if business_id not in self._guards:
@@ -78,6 +87,19 @@ class Bridge:
                                 or result.replaced_unchecked_claim},
                           outcome="ok")
         return result, session.call_id
+
+    def discard_reply(self, call_id: str, business_id: str, reply: str) -> bool:
+        """The voice layer dropped this turn (caller spoke again): the caller never heard
+        the reply, so it must not stay in the notebook as if they had (D33)."""
+        dropped = self.calls.pop_last(call_id, "assistant")
+        self.audit.record(call_id=call_id, business_id=business_id, action="reply_discarded_unheard",
+                          args={"reply": reply[:200], "removed": dropped is not None}, outcome="ok")
+        return dropped is not None
+
+    def skipped_cancelled(self, run_id: str, business_id: str, caller_text: str) -> None:
+        self.audit.record(call_id=self.calls.r.get(f"bolna:run:{run_id}"), business_id=business_id,
+                          action="turn_skipped_cancelled", args={"caller": caller_text[:200]},
+                          outcome="ok")
 
     def health(self) -> dict[str, Any]:
         started = time.perf_counter()
@@ -151,7 +173,23 @@ def create_app(bridge: Bridge) -> FastAPI:
             raise HTTPException(404, f"unknown business (model) {business_id!r}") from None
 
         received = time.perf_counter()
-        result, call_id = await run_in_threadpool(bridge.turn, run_id, business_id, caller_text)
+        lock = bridge.lock_for(run_id)
+        await run_in_threadpool(lock.acquire)
+        try:
+            if await request.is_disconnected():          # Bolna gave up while we queued
+                bridge.skipped_cancelled(run_id, business_id, caller_text)
+                print(f"[bridge] {business_id} run={run_id[:8]} skipped (cancelled before start) "
+                      f"| {caller_text[:50]!r}", flush=True)
+                return JSONResponse({"skipped": "cancelled"}, status_code=499)
+            result, call_id = await run_in_threadpool(bridge.turn, run_id, business_id,
+                                                      caller_text)
+            if await request.is_disconnected():          # answered, but nobody is listening
+                bridge.discard_reply(call_id, business_id, result.reply)
+                print(f"[bridge] {business_id} run={run_id[:8]} reply discarded (cancelled) "
+                      f"| {caller_text[:50]!r}", flush=True)
+                return JSONResponse({"skipped": "cancelled_after_reply"}, status_code=499)
+        finally:
+            lock.release()
         ready_s = time.perf_counter() - received
         rid = "chatcmpl-" + uuid.uuid4().hex[:12]
         print(f"[bridge] {business_id} run={run_id[:8]} call={call_id[:8]} {ready_s:5.2f}s "

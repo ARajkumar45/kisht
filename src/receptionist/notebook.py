@@ -76,6 +76,17 @@ class CallStore:
         pipe.expire(_state_key(call_id), self.ttl)
         pipe.execute()
 
+    def pop_last(self, call_id: str, role: str) -> dict[str, Any] | None:
+        """Remove the newest message if it has this role (e.g. a reply the caller never
+        heard because the voice layer dropped the turn). Returns it, or None."""
+        self._require(call_id)
+        key = _notebook_key(call_id)
+        last = self.r.lindex(key, -1)
+        if last is None or json.loads(last).get("role") != role:
+            return None
+        self.r.rpop(key)
+        return json.loads(last)
+
     def messages(self, call_id: str) -> list[dict[str, Any]]:
         self._require(call_id)
         return [json.loads(m) for m in self.r.lrange(_notebook_key(call_id), 0, -1)]

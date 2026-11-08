@@ -5,18 +5,33 @@
     "tasks": [
       {
         "task_type": "conversation",
-        "toolchain": {"execution": "parallel", "pipelines": [["transcriber", "llm", "synthesizer"]]},
+        "toolchain": {
+          "execution": "parallel",
+          "pipelines": [
+            [
+              "transcriber",
+              "llm",
+              "synthesizer"
+            ]
+          ]
+        },
         "tools_config": {
-          "input": {"provider": "twilio", "format": "wav"},
-          "output": {"provider": "twilio", "format": "wav"},
+          "input": {
+            "provider": "twilio",
+            "format": "wav"
+          },
+          "output": {
+            "provider": "twilio",
+            "format": "wav"
+          },
           "transcriber": {
-            "provider": "deepgram",
-            "model": "nova-3",
+            "provider": "sarvam",
+            "model": "saarika:v2.5",
             "language": "en-IN",
             "stream": true,
             "encoding": "linear16",
             "endpointing": 400,
-            "keywords": "haircut, hair colour, facial, manicure, Ravi, Meena, Glow Salon, Indiranagar, booking, slot, kal, parso, baje"
+            "high_vad_sensitivity": false
           },
           "llm_agent": {
             "agent_type": "simple_llm_agent",
@@ -30,10 +45,15 @@
             }
           },
           "synthesizer": {
-            "provider": "deepgram",
+            "provider": "sarvam",
             "stream": true,
             "audio_format": "wav",
-            "provider_config": {"model": "aura-2-thalia-en", "voice": "aura-2-thalia-en", "voice_id": "aura-2-thalia-en"},
+            "provider_config": {
+              "voice": "shreya",
+              "voice_id": "shreya",
+              "model": "bulbul:v3",
+              "language": "en-IN"
+            },
             "buffer_size": 40.0,
             "caching": true
           }
@@ -41,9 +61,11 @@
         "task_config": {
           "hangup_after_silence": 30.0,
           "use_fillers": false,
-          "optimize_latency": true,
+          "optimize_latency": false,
           "number_of_words_for_interruption": 2,
-          "backchanneling": false
+          "backchanneling": false,
+          "incremental_delay": 1500,
+          "check_if_user_online": false
         }
       }
     ],

@@ -143,3 +143,31 @@ def test_last_user_text_handles_parts_format_and_blank():
     assert last_user_text([{"role": "user", "content": [{"type": "text", "text": "hi"}]}]) == "hi"
     assert last_user_text([{"role": "user", "content": "   "}]) is None
     assert last_user_text([SYSTEM]) is None
+
+
+def test_discarded_reply_leaves_the_notebook_as_the_caller_heard_it():
+    bridge, client = make(FakeModel(text("first answer"), text("second answer")))
+    client.post("/v1/chat/completions", json=bolna_request(["hello"]))
+    call_id = bridge.calls.r.get("bolna:run:run-1")
+    assert bridge.discard_reply(call_id, "glow-salon", "first answer")
+    assert [m["role"] for m in bridge.calls.messages(call_id)] == ["assistant", "user"]
+    client.post("/v1/chat/completions", json=bolna_request(["hello", "hello again"]))
+    assert bridge.calls.messages(call_id)[-1]["content"] == "second answer"
+    assert any(e["action"] == "reply_discarded_unheard" for e in bridge.audit.for_call(call_id))
+
+
+def test_one_lock_per_call_and_turns_do_not_interleave():
+    import threading
+    bridge, client = make(FakeModel(text("a"), text("b"), text("c"), text("d")))
+    assert bridge.lock_for("run-1") is bridge.lock_for("run-1")
+    assert bridge.lock_for("run-1") is not bridge.lock_for("run-2")
+    threads = [threading.Thread(target=client.post, args=("/v1/chat/completions",),
+                                kwargs={"json": bolna_request(["hello"] * (i + 1))})
+               for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    call_id = bridge.calls.r.get("bolna:run:run-1")
+    roles = [m["role"] for m in bridge.calls.messages(call_id)]
+    assert roles == ["assistant"] + ["user", "assistant"] * 4      # strictly alternating
