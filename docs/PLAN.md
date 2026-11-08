@@ -1,8 +1,8 @@
 # Build Plan — AI Receptionist (Sunrise Multispeciality Clinic, Bengaluru)
 
 This plan turns `docs/DECISIONS.md` into work. Decision numbers (D1…D34) are cited
-so every piece of work traces back to a decision. Choices from section 12 were accepted on 2026-11-08 as D35–D41; only weekly
-hours and the gate 1 target date (Q5) are still open.
+so every piece of work traces back to a decision. Choices from section 12 were accepted on 2026-11-08 as D35–D42. There are no dates:
+each phase starts when the previous phase's exit criteria are met (D42).
 
 ---
 
@@ -223,7 +223,8 @@ latency and STT errors), human mic sessions (manual, logged).
 
 ## 10. Phases, tasks and exit criteria
 
-Sizes assume solo work; calendar time depends on your weekly hours (Q5, still open).
+No dates (D42). A phase is done when its **Exit** line is met, and only then does the next one start.
+The sizes below are rough effort guides, not deadlines.
 
 ### Phase 0 — Foundation (≈ 2–3 days)
 - Repo skeleton (§5), `uv` + Python 3.12, ruff, pytest, pre-commit, GitHub Actions running lint + unit tests.
@@ -299,7 +300,7 @@ Sizes assume solo work; calendar time depends on your weekly hours (Q5, still op
 | Mac sleeps / tunnel drops at gate 2 | Med | `caffeinate`, auto-restart script, health check; acceptable for friend tests. |
 | Python 3.15 incompatibilities | High | Pin 3.12 via `uv`. |
 
-## 12. Build choices (Q1–Q4, Q6, Q7 accepted 2026-11-08 → D35–D40; Q5 open)
+## 12. Build choices (all settled 2026-11-08 → D35–D42)
 
 | # | Choice | Recommendation | Needed by |
 |---|---|---|---|
@@ -307,6 +308,6 @@ Sizes assume solo work; calendar time depends on your weekly hours (Q5, still op
 | Q2 | Model size | Use the downloaded **Qwen3.5-9B-4bit**; drop to a smaller one only if latency misses budget. | Phase 0 |
 | Q3 | Tracing tool | **Langfuse self-hosted** (nice UI for demos) vs plain OpenTelemetry + own dashboard. | Phase 2 |
 | Q4 | Cloud host for gate 3 | Cheapest **Mumbai-region VM** (~₹500–1,000/mo) + managed Postgres only if within cap. | Phase 6 |
-| Q5 | Your time | How many hours per week, and a target date for gate 1? | Now (sets calendar) |
+| Q5 | Pacing | No dates; move on when the exit criteria are met (D42). | — |
 | Q6 | Public repo | **Public after gate 1**, MIT license, no secrets, fictional data only. | Phase 4 |
 | Q7 | Confirmations | SMS via Twilio at gate 2; WhatsApp later (needs Meta business verification). | Phase 5 |

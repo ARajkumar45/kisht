@@ -96,4 +96,4 @@ Change a decision by editing it here and noting the date and reason.
 - **D39. Public repo:** make the GitHub repo public (MIT license) after gate 1 passes, with fictional data only and no secrets.
 - **D40. Booking confirmations:** SMS through Twilio at gate 2; WhatsApp later (needs Meta business verification).
 - **D41. Python:** pinned to 3.12 with `uv` (the system Python 3.15 is too new for many voice libraries).
-- **Still open:** weekly hours and target date for gate 1 (PLAN.md §12 Q5).
+- **D42. Pacing:** no dates or deadlines. Move to the next phase only when the current phase's exit criteria are met.
