@@ -86,3 +86,14 @@ Change a decision by editing it here and noting the date and reason.
 ## 12. Team
 
 - **D34. Builder and operator:** built and run solo.
+
+## 13. Build choices (accepted 2026-11-08, from docs/PLAN.md §12)
+
+- **D35. Voice framework:** Pipecat.
+- **D36. Model:** the already-downloaded `mlx-community/Qwen3.5-9B-4bit`; drop to a smaller model only if it misses the latency budget. (Refines D12's 7–8B.)
+- **D37. Call tracing:** Langfuse, self-hosted in Docker.
+- **D38. Gate 3 server:** cheapest Mumbai-region VM (about ₹500–1,000/month); managed Postgres only if it fits the ₹3,000 cap.
+- **D39. Public repo:** make the GitHub repo public (MIT license) after gate 1 passes, with fictional data only and no secrets.
+- **D40. Booking confirmations:** SMS through Twilio at gate 2; WhatsApp later (needs Meta business verification).
+- **D41. Python:** pinned to 3.12 with `uv` (the system Python 3.15 is too new for many voice libraries).
+- **Still open:** weekly hours and target date for gate 1 (PLAN.md §12 Q5).
