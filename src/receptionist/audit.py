@@ -1,0 +1,62 @@
+"""Audit log: one record for every tool call and guard decision (D46).
+
+Pattern from retail-agent/agent/audit.py, extended with call_id and business_id.
+Phone numbers are masked before they are written (personal data hidden in logs, D56).
+"""
+from __future__ import annotations
+
+import json
+import re
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+_PHONE = re.compile(r"\+?\d[\d\s-]{7,}\d")
+
+
+def mask_phone(text: str) -> str:
+    """'+91 98450 12345' -> '******2345' (keep the last 4 digits only)."""
+    def _mask(m: re.Match) -> str:
+        digits = re.sub(r"\D", "", m.group())
+        return "*" * 6 + digits[-4:]
+    return _PHONE.sub(_mask, text)
+
+
+def _redact(value: Any) -> Any:
+    if isinstance(value, str):
+        return mask_phone(value)
+    if isinstance(value, dict):
+        return {k: _redact(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_redact(v) for v in value]
+    return value
+
+
+class AuditLog:
+    def __init__(self, path: str | Path | None = None):
+        self.entries: list[dict[str, Any]] = []
+        self.path = Path(path) if path else None
+        if self.path:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def record(self, *, call_id: str | None, business_id: str, action: str,
+               args: dict[str, Any], outcome: str, detail: str = "") -> dict[str, Any]:
+        if outcome not in {"ok", "denied", "error"}:
+            raise ValueError(f"unknown outcome {outcome!r}")
+        entry = {
+            "time": datetime.now(UTC).isoformat(),
+            "call_id": call_id,
+            "business_id": business_id,
+            "action": action,
+            "args": _redact(args),
+            "outcome": outcome,
+            "detail": _redact(detail),
+        }
+        self.entries.append(entry)
+        if self.path:
+            with open(self.path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return entry
+
+    def for_call(self, call_id: str) -> list[dict[str, Any]]:
+        return [e for e in self.entries if e["call_id"] == call_id]

@@ -90,6 +90,13 @@ To change a decision: edit its line, add the date and the reason.
 - D68. No dates; move to the next milestone when the current one's exit criteria are met *(kept)*.
 - D69. Python pinned to 3.12 with `uv`, since the system Python 3.15 is too new for many voice libraries *(kept)*.
 
+## Learned while building M2 (2026-11-08)
+- D70. The model has no tool to confirm a booking. `book_visit` only proposes and returns the read-back; when the caller's own words are a clear yes, session code books it and answers, with no model call. (Replaces the two-step `confirm=true` tool from the M2 plan: Qwen3.5-9B never used it correctly, and it gave the model a way to try booking on its own.)
+- D71. A caller reply that names a time, a number or a day ("Theek hai, 12 baje kar do") is never a clear yes: it is a change request. Found live: it booked 11:00 when the caller asked for 12:00.
+- D72. No "keep replies to one or two sentences" rule in the prompt: with Qwen3.5-9B it stopped tool calls (0/12 with it, 10/12 without). Opening hours, prices and other config facts may be stated without a tool; anything about free times must come from `check_availability`, enforced in code with one retry.
+- D73. Thinking mode stays off for the local model: 12/12 tool calls vs 11/12, but 22 s a turn vs 9 s.
+- Known gap (for the test suite, D65): the model often asks its own "shall I book?" after `check_availability` instead of calling `book_visit` at once, costing the caller one extra turn. Safe, but slow.
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?

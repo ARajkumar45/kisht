@@ -1,0 +1,37 @@
+[project]
+name = "receptionist"
+version = "0.1.0"
+description = "AI phone receptionist for small businesses in Bengaluru"
+readme = "README.md"
+authors = [
+    { name = "Raj Kumar Arumugam", email = "armugamvrajkumar121@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=3.46.0",
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
+    "redis>=8.1.0",
+]
+
+[project.scripts]
+receptionist = "receptionist.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live'"
+markers = ["live: needs the local model server on port 8080 (run with: pytest -m live)"]
+
+[tool.ruff]
+line-length = 100
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "fakeredis>=2.40.0",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
