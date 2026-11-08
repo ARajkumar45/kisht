@@ -96,21 +96,48 @@ def chat(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="receptionist")
-    sub = p.add_subparsers(dest="command", required=True)
-    c = sub.add_parser("chat", help="chat with the agent as a caller")
-    c.add_argument("--business", default="glow-salon")
-    c.add_argument("--number", help="pick the business by the number called instead")
-    c.add_argument("--lang", choices=["en", "hi", "kn", "te", "ta"])
+def bridge(args: argparse.Namespace) -> int:
+    """Serve the OpenAI-compatible bridge that Bolna uses as its LLM (M5)."""
+    import uvicorn
+
+    from receptionist.bridge import bridge_from_env, create_app
+
+    os.environ.setdefault("BUSINESSES_DIR", args.businesses_dir)
+    os.environ.setdefault("REDIS_URL", args.redis_url)
+    os.environ.setdefault("BOOKINGS_DB", args.db)
+    os.environ.setdefault("AUDIT_LOG", args.audit)
+    os.environ.setdefault("MODEL_BASE_URL", args.model_url)
+    os.environ.setdefault("MODEL_NAME", args.model)
+    app = create_app(bridge_from_env())
+    print(f"{DIM}bridge on http://{args.host}:{args.port}  (Bolna llm_config.base_url = "
+          f"http://localhost:{args.port}/v1){END}")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def _common(c: argparse.ArgumentParser) -> None:
     c.add_argument("--businesses-dir", default="businesses")
     c.add_argument("--redis-url", default=os.getenv("REDIS_URL", "redis://localhost:6379/0"))
     c.add_argument("--db", default=os.getenv("BOOKINGS_DB", "data/bookings.sqlite"))
     c.add_argument("--audit", default=os.getenv("AUDIT_LOG", "audit/audit.jsonl"))
     c.add_argument("--model-url", default=os.getenv("MODEL_BASE_URL", "http://localhost:8080/v1"))
     c.add_argument("--model", default=os.getenv("MODEL_NAME", "mlx-community/Qwen3.5-9B-4bit"))
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="receptionist")
+    sub = p.add_subparsers(dest="command", required=True)
+    b = sub.add_parser("bridge", help="serve the OpenAI-compatible bridge for Bolna")
+    b.add_argument("--host", default="127.0.0.1")
+    b.add_argument("--port", type=int, default=5050)
+    _common(b)
+    c = sub.add_parser("chat", help="chat with the agent as a caller")
+    c.add_argument("--business", default="glow-salon")
+    c.add_argument("--number", help="pick the business by the number called instead")
+    c.add_argument("--lang", choices=["en", "hi", "kn", "te", "ta"])
+    _common(c)
     args = p.parse_args(argv)
-    return chat(args)
+    return bridge(args) if args.command == "bridge" else chat(args)
 
 
 if __name__ == "__main__":

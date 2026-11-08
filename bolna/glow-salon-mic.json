@@ -1,0 +1,57 @@
+{
+  "agent_config": {
+    "agent_name": "Glow Salon receptionist (microphone test)",
+    "agent_type": "other",
+    "tasks": [
+      {
+        "task_type": "conversation",
+        "toolchain": {"execution": "parallel", "pipelines": [["transcriber", "llm", "synthesizer"]]},
+        "tools_config": {
+          "input": {"provider": "default", "format": "pcm"},
+          "output": {"provider": "default", "format": "pcm"},
+          "transcriber": {
+            "provider": "deepgram",
+            "model": "nova-3",
+            "language": "en-IN",
+            "stream": true,
+            "encoding": "linear16",
+            "endpointing": 400,
+            "keywords": "haircut, hair colour, facial, manicure, Ravi, Meena, Glow Salon, Indiranagar, booking, slot, kal, parso, baje"
+          },
+          "llm_agent": {
+            "agent_type": "simple_llm_agent",
+            "agent_flow_type": "streaming",
+            "llm_config": {
+              "provider": "custom",
+              "model": "glow-salon",
+              "base_url": "http://localhost:5050/v1",
+              "max_tokens": 300,
+              "temperature": 0.3
+            }
+          },
+          "synthesizer": {
+            "provider": "deepgram",
+            "stream": true,
+            "audio_format": "linear16",
+            "provider_config": {"model": "aura-2-thalia-en", "voice": "aura-2-thalia-en", "voice_id": "aura-2-thalia-en"},
+            "buffer_size": 40.0,
+            "caching": true
+          }
+        },
+        "task_config": {
+          "hangup_after_silence": 30.0,
+          "use_fillers": false,
+          "optimize_latency": true,
+          "number_of_words_for_interruption": 2,
+          "backchanneling": false
+        }
+      }
+    ],
+    "agent_welcome_message": "Hello, Glow Salon. I'm the salon's assistant, and this call may be recorded. How can I help you?"
+  },
+  "agent_prompts": {
+    "task_1": {
+      "system_prompt": "You are the Glow Salon phone receptionist. (Every reply is produced by the receptionist service behind this agent; this prompt is not used by it.)"
+    }
+  }
+}
