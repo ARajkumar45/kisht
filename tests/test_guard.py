@@ -249,3 +249,32 @@ def test_store_blocks_overlap_but_allows_back_to_back():
     store.add(make(t + timedelta(minutes=30), 30, "b"))          # starts as a ends: fine
     with pytest.raises(SlotTaken):
         store.add(make(t + timedelta(minutes=15), 30, "c"))      # overlaps both
+
+
+def test_thirty_two_threads_racing_for_one_slot_leave_exactly_one_booking():
+    """SQLite store under real concurrency: one connection per thread, write lock wins."""
+    import threading
+    store = SqliteBookingStore()
+    t = datetime(2026, 11, 10, 11, 0, tzinfo=IST)
+    outcomes = []
+    lock = threading.Lock()
+
+    def attempt(i):
+        b = Booking(id=f"race{i}", business_id="glow-salon", staff_id="ravi",
+                    service_id="haircut-men", start=t, end=t + timedelta(minutes=30),
+                    customer_name=f"C{i}", customer_phone="9845000000")
+        try:
+            store.add(b)
+            result = "ok"
+        except SlotTaken:
+            result = "taken"
+        with lock:
+            outcomes.append(result)
+
+    threads = [threading.Thread(target=attempt, args=(i,)) for i in range(32)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert outcomes.count("ok") == 1 and outcomes.count("taken") == 31
+    assert len(store.for_staff("glow-salon", "ravi", t, t + timedelta(hours=1))) == 1

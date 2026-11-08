@@ -7,6 +7,8 @@ overlap check and the insert inside one write transaction.
 from __future__ import annotations
 
 import sqlite3
+import tempfile
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -50,12 +52,19 @@ def new_booking_id() -> str:
 
 
 class SqliteBookingStore:
+    """One SQLite connection per thread (sqlite3 connections must not be shared across
+    threads: the M4 load test broke 9 of 10 concurrent callers with a shared one).
+    `:memory:` (tests) becomes a throw-away temp file, because an in-memory database
+    is private to one connection and SQLite's shared-cache mode locks whole tables."""
+
     def __init__(self, path: str | Path = ":memory:"):
-        if path != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("""
+        if path == ":memory:":
+            path = Path(tempfile.mkdtemp(prefix="bookings_")) / "bookings.sqlite"
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self._uri = f"file:{Path(path).resolve()}"
+        self._local = threading.local()
+        self._keepalive = self._connect()
+        self._keepalive.execute("""
             CREATE TABLE IF NOT EXISTS bookings (
                 id TEXT PRIMARY KEY,
                 business_id TEXT NOT NULL,
@@ -69,29 +78,42 @@ class SqliteBookingStore:
                 status TEXT NOT NULL,
                 created_utc TEXT NOT NULL
             )""")
-        self.db.execute("CREATE INDEX IF NOT EXISTS ix_staff_time "
-                        "ON bookings (business_id, staff_id, start_utc)")
+        self._keepalive.execute("CREATE INDEX IF NOT EXISTS ix_staff_time "
+                                "ON bookings (business_id, staff_id, start_utc)")
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._uri, uri=True, isolation_level=None, timeout=30)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @property
+    def db(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._local.conn = self._connect()
+        return conn
 
     def add(self, booking: Booking) -> Booking:
         start, end = _utc(booking.start), _utc(booking.end)
         if start >= end:
             raise ValueError("booking must end after it starts")
-        self.db.execute("BEGIN IMMEDIATE")   # take the write lock before checking
+        db = self.db
+        db.execute("BEGIN IMMEDIATE")   # take the write lock before checking
         try:
-            clash = self.db.execute(
+            clash = db.execute(
                 "SELECT id FROM bookings WHERE business_id=? AND staff_id=? "
                 "AND status='confirmed' AND start_utc < ? AND end_utc > ?",
                 (booking.business_id, booking.staff_id, end, start)).fetchone()
             if clash:
                 raise SlotTaken(f"{booking.staff_id} is already booked at that time")
-            self.db.execute(
+            db.execute(
                 "INSERT INTO bookings VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (booking.id, booking.business_id, booking.staff_id, booking.service_id,
                  start, end, booking.customer_name, booking.customer_phone,
                  booking.call_id, booking.status, datetime.now(UTC).isoformat()))
-            self.db.execute("COMMIT")
+            db.execute("COMMIT")
         except BaseException:
-            self.db.execute("ROLLBACK")
+            db.execute("ROLLBACK")
             raise
         return booking
 

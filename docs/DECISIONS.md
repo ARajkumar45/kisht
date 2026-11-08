@@ -102,6 +102,12 @@ To change a decision: edit its line, add the date and the reason.
 - D75. The local server keeps a small number of cached prefixes, not one: cache-aware routing (D37) means keeping a business's calls on a server that still holds its prefix.
 - D76. Latency target (D60) needs short spoken sentences and sentence-by-sentence voice streaming: on this Mac the model generates 20–25 tokens/s, so reply length, not prompt processing, now dominates turn time.
 
+## Learned in M4 (2026-11-08, see docs/RESULTS.md)
+- D77. Our call-worker layer is not the bottleneck: 100 simultaneous callers with an instant model all booked in 0.5 s with no errors (~20,000 turns/min on one process). The model server is the limit.
+- D78. SQLite connections are per thread (a shared one failed 9 of 10 concurrent callers); the write lock plus a 32-thread race test guarantee one booking per slot.
+- D79. This Mac handles 1–2 simultaneous calls; at 5 turns double, at 10 they reach ~37 s, and with default batching 10 callers crash the GPU out of memory and the server stays dead (404) until restarted. Gate 2 runs on the Mac with 1–2 calls at a time; gate 3 uses the cloud model API (D40) from day one.
+- D80. The model adapter must get a per-server concurrency limit, a health check that sends a tiny completion (listing models stays "healthy" while completions fail), and failover to the backup provider when it fails (D48). To be built before any phone traffic (M5/M6).
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?
