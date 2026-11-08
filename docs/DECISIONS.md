@@ -97,6 +97,11 @@ To change a decision: edit its line, add the date and the reason.
 - D73. Thinking mode stays off for the local model: 12/12 tool calls vs 11/12, but 22 s a turn vs 9 s.
 - Known gap (for the test suite, D65): the model often asks its own "shall I book?" after `check_availability` instead of calling `book_visit` at once, costing the caller one extra turn. Safe, but slow.
 
+## Learned in M3 (2026-11-08, see docs/RESULTS.md)
+- D74. The stable prefix is confirmed worth it: prompt processing 0.35 s with it, 3.5 s without (10×) on the local server. Nothing caller-specific ever goes before the conversation in a request.
+- D75. The local server keeps a small number of cached prefixes, not one: cache-aware routing (D37) means keeping a business's calls on a server that still holds its prefix.
+- D76. Latency target (D60) needs short spoken sentences and sentence-by-sentence voice streaming: on this Mac the model generates 20–25 tokens/s, so reply length, not prompt processing, now dominates turn time.
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?
