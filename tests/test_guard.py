@@ -88,6 +88,15 @@ def test_proposal_saves_pending_and_reads_back(guard):
     assert guard.calls.get(call, "pending_booking")["id"] == p["id"]
 
 
+def test_read_back_follows_the_callers_language(guard):
+    call = new_call(guard)
+    guard.calls.set_state(call, language="hi")
+    p = guard.propose_booking(call, service_id="haircut-men", start="2026-11-10T11:00",
+                              customer_name="Priya", customer_phone=PHONE)
+    assert p["read_back"].endswith("Book kar doon?")
+    assert "Ravi ke saath" in p["read_back"] and "2345" in p["read_back"]
+
+
 def test_cannot_book_without_callers_yes(guard):
     call = new_call(guard)
     p = guard.propose_booking(call, service_id="haircut-men", start="2026-11-10T11:00",

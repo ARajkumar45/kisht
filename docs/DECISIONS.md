@@ -115,7 +115,8 @@ To change a decision: edit its line, add the date and the reason.
 - D84. Sarvam returns Hindi speech in Devanagari even in en-IN mode, and sometimes translates Hinglish to English. Every code-side word check (yes/no, times, days) must understand Devanagari as well as Latin spellings.
 - D85. Bolna's welcome message must be rendered to audio locally (the hosted platform did it for them); the fork does this once per agent with Sarvam. Four fork patches were needed for local web/mic calls (welcome, init guard, stream id, mark acknowledgements); keep them as separate commits so they can be sent upstream.
 - D86. Measured per turn: speech end → transcript ≈ 0.5 s, reply → first audio ≈ 0.8 s, so the voice layer adds ≈ 1.5 s; the local model adds 2–17 s (D76, D79). The caller's "yes" is answered in 1.9 s with no model call (D70). The 3 s target (D60) needs the cloud model API, not more voice tuning.
-- Known gap: on a Devanagari first turn the model replied in Hindi without calling the tools; `saaras:v4` and a Hinglish prompt example are the next things to try (M6 eval suite, D65).
+- D87. Everything the caller hears from code (read-back, booked line, fallbacks) follows the call's language, and a Devanagari transcript counts as Hindi. If a `book_visit` succeeds in the last allowed tool round, the session speaks the read-back itself instead of giving up.
+- Known gap: on a Devanagari first turn the model calls the tools in about half the voice runs (4/4 in text) and often asks its own "shall I book?" after `check_availability`; `saaras:v4` and a Hinglish prompt example are the next things to try, counted by the M6 eval suite (D65).
 
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?

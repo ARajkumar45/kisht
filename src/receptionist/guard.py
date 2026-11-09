@@ -119,8 +119,17 @@ class Guard:
         if len(phone) < 10:
             raise GuardRefused("bad_phone", "Ask the caller for a 10-digit phone number.")
         person = self._pick_free_staff(service_id, staff_id, begin, service.duration_min)
-        summary = (f"{service.name} with {person.name} on {begin:%A %d %B} at "
-                   f"{begin:%I:%M %p}, for {name}, phone ending {phone[-4:]}")
+        # The read-back is spoken to the caller, so it follows the call's language (D84:
+        # a Hindi caller heard an English "Shall I book it?" in the M5 voice probe).
+        language = self.calls.get(call_id, "language", self.business.languages.default)
+        if language == "hi":
+            summary = (f"{service.name}, {person.name} ke saath, {begin:%A %d %B} ko "
+                       f"{begin:%I:%M %p} baje, {name} ke liye, phone ending {phone[-4:]}")
+            question = ". Book kar doon?"
+        else:
+            summary = (f"{service.name} with {person.name} on {begin:%A %d %B} at "
+                       f"{begin:%I:%M %p}, for {name}, phone ending {phone[-4:]}")
+            question = ". Shall I book it?"
         pending = {
             "id": "pb_" + uuid.uuid4().hex[:8],
             "service_id": service.id,
@@ -129,7 +138,7 @@ class Guard:
             "customer_name": name,
             "customer_phone": phone,
             "summary": summary,
-            "read_back": summary + ". Shall I book it?",
+            "read_back": summary + question,
         }
         self.calls.set_state(call_id, pending_booking=pending)
         self.calls.clear(call_id, "caller_confirmed")   # a new proposal needs a new yes

@@ -31,6 +31,31 @@ the microphone client does (16 kHz PCM, 100 ms frames, mark acknowledgements). R
 | "Haan, book kar do." | "Yes, book it." (translated by the STT) | 17.7 s | model then proposed; read-back spoken |
 | "Facial ka kitna lagta hai?" | exact (Latin script) | 5.0 s | "Facial ki cost Rs 1200 hai…" |
 
+### Hinglish caller, repeated (2026-11-09, same three lines, four voice runs + text)
+
+The question was whether the Devanagari first turn makes the model call the tools.
+
+| Where | First turn called check_availability | Read-back reached by turn 2 | Notes |
+|---|---|---|---|
+| Text, straight to the model (5 lines: 2 Devanagari, 2 Hinglish, 1 English) | 4/4 lines that named a time (the 5th rightly asked for a time) | — | one Devanagari line was answered in English |
+| Voice through Bolna, 4 runs | 2/4 | 3/4 | reply after 6–16 s on turn 1 |
+
+So the tools are called; what varies is *when*. Three things found and fixed on the way:
+
+1. One run used all three tool rounds (`check` → `check` with the wrong staff → `book_visit`)
+   and the caller heard "Sorry, I couldn't sort that out" even though the proposal had
+   succeeded. The session now speaks the read-back itself when the last round proposed.
+2. The read-back and the "Done, it's booked" summary were English for every caller. They now
+   follow the call's language ("…Ravi ke saath, Tuesday 10 November ko 11:00 AM baje… Book
+   kar doon?").
+3. A caller whose transcript is pure Devanagari was not detected as Hindi (the detector
+   only knew Latin-script words), so even the fixed lines came out in English. Fixed.
+
+Still varying, not fixed: after `check_availability` the model usually asks its own "shall
+I book?" instead of calling `book_visit` at once (one extra turn, D73 known gap), and the
+first-turn reply is sometimes English for a Devanagari caller. Both are model behaviour; the
+M6 eval suite (D65) will count them, and the cloud model (D40) is expected to do better.
+
 ### Where a turn's time goes (from the three runs)
 
 | Step | Time |
@@ -64,8 +89,9 @@ the microphone client does (16 kHz PCM, 100 ms frames, mark acknowledgements). R
 
 - The real microphone test by a person and the Twilio call (tunnels need to be opened by
   hand; see RUNBOOK notes in the commit).
-- Hinglish: the model answered the Devanagari request in Hindi but did not call the tools
-  until the second turn; `saaras:v4` (keyterms, better code-mixing) is the next thing to try.
+- Hinglish: tools are called on the first turn in about half the voice runs (see the table
+  above); `saaras:v4` (keyterms, better code-mixing) and a Hinglish example in the prompt
+  are the next things to try, counted by the M6 eval suite.
 - Turn time is dominated by the local model (D76); the voice layer adds about 1.5 s.
 
 ## M4 — Load test with simulated concurrent callers (2026-11-08)

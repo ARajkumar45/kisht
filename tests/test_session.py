@@ -67,7 +67,9 @@ def test_full_booking_is_finished_by_code_on_the_callers_yes(guard, salon):
     assert not first.booked and "Shall I book it?" in first.reply
     second = session.handle("haan, book kar do")
     assert second.booked and second.model_calls == 0           # no model call at all
-    assert second.reply == f"Ho gaya, book kar diya: {READ_BACK}. Milte hain!"
+    # the caller spoke Hinglish, so the summary is read back in Hinglish too
+    assert second.reply.startswith("Ho gaya, book kar diya: Men's haircut, Ravi ke saath")
+    assert second.reply.endswith("phone ending 2345. Milte hain!")
     assert guard.calls.get(session.call_id, "pending_booking") is None
     assert guard.bookings.get(guard.calls.get(session.call_id, "booking_id")).staff_id == "ravi"
     actions = [e["action"] for e in guard.audit.for_call(session.call_id)]
@@ -132,6 +134,12 @@ def test_hindi_caller_gets_hindi_fixed_lines(guard, salon):
     assert turn.reply.startswith("Abhi tak kuch book nahi hua hai")
 
 
+def test_devanagari_caller_counts_as_hindi(guard, salon):
+    session, _ = start(guard, salon, FakeModel(text("Booking ho gayi!")))
+    turn = session.handle("कल सुबह 11 बजे हेयर कट चाहिए")
+    assert turn.reply.startswith("Abhi tak kuch book nahi hua hai")
+
+
 # ---------- model misbehaviour ----------
 
 def test_too_many_tool_rounds_ends_politely(guard, salon):
@@ -141,6 +149,20 @@ def test_too_many_tool_rounds_ends_politely(guard, salon):
     turn = session.handle("any slot?")
     assert turn.reply.startswith("Sorry, I couldn't sort that out")
     assert guard.calls.get(session.call_id, "stuck_count") == 1
+
+
+def test_proposal_in_the_last_tool_round_is_still_read_back(guard, salon):
+    """check -> check -> book_visit uses all rounds; the caller must hear the read-back."""
+    model = FakeModel(tool("check_availability", service_id="haircut-men", day="2026-11-10"),
+                      tool("check_availability", service_id="haircut-men", day="2026-11-10",
+                           staff_id="meena"),
+                      tool("book_visit", **DETAILS))
+    session, _ = start(guard, salon, model)
+    turn = session.handle("Haircut tomorrow 11, Priya, 9845012345")
+    assert turn.reply == READ_BACK + ". Shall I book it?"
+    assert not turn.booked and guard.calls.get(session.call_id, "stuck_count") == 0
+    second = session.handle("yes")
+    assert second.booked
 
 
 def test_model_down_gives_fallback_and_flags_handoff(guard, salon):

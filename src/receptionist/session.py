@@ -182,6 +182,7 @@ class CallSession:
         today = self.guard.now().date()
         nudged = False
         checked = False      # did a schedule tool run this turn?
+        proposed = None      # read-back from a book_visit that succeeded this turn
         for _ in range(MAX_TOOL_ROUNDS):
             messages = build_messages(self.business, self.calls.messages(self.call_id), today)
             reply = self._ask(messages, result)
@@ -209,7 +210,14 @@ class CallSession:
                 outcome = self.tools.run(self.call_id, tc.name, tc.arguments)
                 result.tool_calls.append(tc.name)
                 checked = checked or tc.name in SCHEDULE_TOOLS
+                if tc.name == "book_visit" and outcome.content.get("ok"):
+                    proposed = outcome.content.get("read_back")
                 self.calls.append(self.call_id, outcome.as_message(tc.id))
+        # Rounds are used up. If the last round proposed a booking, the caller must still
+        # hear the read-back (rule 3 says the model would only repeat it anyway); seen live
+        # in M5 when check -> check(wrong staff) -> book_visit spent all three rounds.
+        if proposed:
+            return proposed
         stuck = self.calls.incr(self.call_id, "stuck_count")
         self._log("stuck", {"stuck_count": stuck}, "error")
         return STUCK.get(self.language, STUCK["en"])
@@ -234,7 +242,8 @@ class CallSession:
         """Rough guess, used only for our own fixed lines (fallbacks, safe replies).
         The model picks its reply language itself (prompt rule 7)."""
         words = set(re.findall(r"[a-z]+", text.lower()))
-        if "hi" in self.business.languages.allowed and len(words & _HINDI_MARKERS) >= 1:
+        devanagari = re.search(r"[\u0900-\u097f]", text) is not None     # Sarvam STT (D84)
+        if "hi" in self.business.languages.allowed and (devanagari or words & _HINDI_MARKERS):
             self.calls.set_state(self.call_id, language="hi")
 
     def _log(self, action: str, args: dict, outcome: str) -> None:
