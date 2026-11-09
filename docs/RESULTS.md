@@ -2,6 +2,72 @@
 
 Measured numbers, newest first. Each section says how it was measured so it can be re-run.
 
+## M5 — Voice through Bolna (2026-11-08/09)
+
+**Question (D25–D28, D60):** does the text brain work behind a real voice stack, and
+where does the time go per turn?
+
+**Setup:** the Bolna fork run from source (Python 3.12, no Docker) with `custom` LLM
+provider pointing at our bridge (`receptionist bridge`, port 5050); speech-to-text Sarvam
+`saarika:v2.5` (en-IN, VAD sensitivity off), text-to-speech Sarvam `bulbul:v3` ("shreya");
+model Qwen3.5-9B on this Mac. Caller audio was produced by Sarvam's own TTS (a different
+voice, "rahul") and streamed into Bolna's websocket by `tools/voice_probe.py` exactly as
+the microphone client does (16 kHz PCM, 100 ms frames, mark acknowledgements). Reply time
+= end of the caller's speech → first reply audio. Raw rows: `results/m5/voice_probe_*.json`.
+
+### English caller, full booking by voice
+
+| Caller said | Heard as | Reply after | Bridge time | Model calls | Reply audio | Outcome |
+|---|---|---|---|---|---|---|
+| "What are your timings on Sunday?" | exact | 2.9 s | 2.2 s | 1 | 6.0 s | answered from config |
+| "…book a men's haircut tomorrow at eleven… Priya… 9845012345" (10.6 s line) | exact, one utterance | 13.4 s | 12.5 s | 3 (check + propose) | 8.2 s | read-back spoken |
+| "Yes please, book it." | exact | **1.9 s** | 0.01 s | **0** | 10.1 s | **booked by code** |
+
+### Hinglish caller
+
+| Caller said | Heard as | Reply after | Outcome |
+|---|---|---|---|
+| "Kal subah gyarah baje men's haircut chahiye. Mera naam Priya hai, number 9845012345." | Devanagari: "कल सुबह 11 बजे मेंस हेयर कट चाहिए। मेरा नाम प्रिया…" | 7.0 s | model replied in Hindi, asked to confirm instead of proposing |
+| "Haan, book kar do." | "Yes, book it." (translated by the STT) | 17.7 s | model then proposed; read-back spoken |
+| "Facial ka kitna lagta hai?" | exact (Latin script) | 5.0 s | "Facial ki cost Rs 1200 hai…" |
+
+### Where a turn's time goes (from the three runs)
+
+| Step | Time |
+|---|---|
+| End of speech → final transcript (Sarvam, VAD off) | ≈ 0.4–0.7 s |
+| Bridge: model + tools (this Mac) | 2–6 s for a plain answer; 12–17 s when a turn needs two tool rounds |
+| Reply ready → first audio heard (Sarvam TTS first chunk) | ≈ 0.7–0.9 s |
+| Caller's "yes" → "Done, it's booked" | 1.9 s, no model call at all (D70) |
+
+### What broke on the way, and the fix
+
+1. Deepgram key rejected (401 everywhere) → switched both speech directions to Sarvam.
+2. Bolna only plays a welcome from pre-rendered audio and the hosted platform renders it;
+   locally the welcome never played, and a web call also crashed in `handle_init_event`
+   without context data, which stopped the welcome from starting at all → every transcript
+   was dropped as "welcome still playing". Fixed in the fork (quickstart renders the
+   welcome once per agent with Sarvam; init guard; `set_stream_sid` on the mic handler).
+3. The mic client and probe never acknowledged `mark` events, so Bolna never learned the
+   welcome had been heard → both now acknowledge.
+4. Sarvam's VAD (high sensitivity by default) chopped a dictated phone number into six
+   turns; `optimize_latency` additionally sent every *interim* transcript to the model.
+   Fixed: `high_vad_sensitivity: false` (added to Bolna's config schema), `incremental_delay`
+   1.5 s, `optimize_latency: false`. The 10.6-second booking line then arrived as one
+   utterance with the full number.
+5. The bridge now runs one turn at a time per call, skips turns Bolna has already
+   cancelled, and drops replies the caller never heard (keeps the notebook equal to what
+   was said and heard, D33).
+6. Hindi speech comes back in Devanagari: yes/no detection now understands it.
+
+### Still open after M5
+
+- The real microphone test by a person and the Twilio call (tunnels need to be opened by
+  hand; see RUNBOOK notes in the commit).
+- Hinglish: the model answered the Devanagari request in Hindi but did not call the tools
+  until the second turn; `saaras:v4` (keyterms, better code-mixing) is the next thing to try.
+- Turn time is dominated by the local model (D76); the voice layer adds about 1.5 s.
+
 ## M4 — Load test with simulated concurrent callers (2026-11-08)
 
 **Question (D61, D66):** how many calls at once can the system take, and what breaks first:

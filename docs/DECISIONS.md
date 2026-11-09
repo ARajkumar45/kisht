@@ -108,6 +108,15 @@ To change a decision: edit its line, add the date and the reason.
 - D79. This Mac handles 1–2 simultaneous calls; at 5 turns double, at 10 they reach ~37 s, and with default batching 10 callers crash the GPU out of memory and the server stays dead (404) until restarted. Gate 2 runs on the Mac with 1–2 calls at a time; gate 3 uses the cloud model API (D40) from day one.
 - D80. The model adapter must get a per-server concurrency limit, a health check that sends a tiny completion (listing models stays "healthy" while completions fail), and failover to the backup provider when it fails (D48). To be built before any phone traffic (M5/M6).
 
+## Learned in M5 (2026-11-09, see docs/RESULTS.md)
+- D81. Speech-to-text and text-to-speech are Sarvam (`saarika:v2.5` en-IN, `bulbul:v3`), not Deepgram: the Deepgram key never authenticated, and Sarvam handles Hindi/Hinglish natively. Still swappable per D30 (one block in the agent config).
+- D82. Sarvam's voice-activity detection runs with `high_vad_sensitivity: false`, `incremental_delay` 1.5 s and `optimize_latency: false`: with the defaults a dictated phone number arrived as six turns and interim transcripts reached the model. Cost: ~0.5 s more before the turn ends; worth it for whole utterances.
+- D83. One turn at a time per call in the bridge: a turn Bolna cancelled (caller spoke again) is skipped, and a reply the caller never heard is removed from the notebook, so the notebook equals what was said and heard (D33).
+- D84. Sarvam returns Hindi speech in Devanagari even in en-IN mode, and sometimes translates Hinglish to English. Every code-side word check (yes/no, times, days) must understand Devanagari as well as Latin spellings.
+- D85. Bolna's welcome message must be rendered to audio locally (the hosted platform did it for them); the fork does this once per agent with Sarvam. Four fork patches were needed for local web/mic calls (welcome, init guard, stream id, mark acknowledgements); keep them as separate commits so they can be sent upstream.
+- D86. Measured per turn: speech end → transcript ≈ 0.5 s, reply → first audio ≈ 0.8 s, so the voice layer adds ≈ 1.5 s; the local model adds 2–17 s (D76, D79). The caller's "yes" is answered in 1.9 s with no model call (D70). The 3 s target (D60) needs the cloud model API, not more voice tuning.
+- Known gap: on a Devanagari first turn the model replied in Hindi without calling the tools; `saaras:v4` and a Hinglish prompt example are the next things to try (M6 eval suite, D65).
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?
