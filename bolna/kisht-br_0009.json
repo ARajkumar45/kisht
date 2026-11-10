@@ -1,6 +1,6 @@
 {
   "agent_config": {
-    "agent_name": "Glow Salon receptionist (microphone test)",
+    "agent_name": "Kisht demo-nbfc -> br_0009 (mic)",
     "agent_type": "other",
     "tasks": [
       {
@@ -38,9 +38,9 @@
             "agent_flow_type": "streaming",
             "llm_config": {
               "provider": "custom",
-              "model": "glow-salon",
+              "model": "demo-nbfc:br_0009",
               "base_url": "http://localhost:5050/v1",
-              "max_tokens": 300,
+              "max_tokens": 400,
               "temperature": 0.3
             }
           },
@@ -52,7 +52,7 @@
               "voice": "shreya",
               "voice_id": "shreya",
               "model": "bulbul:v3",
-              "language": "en-IN"
+              "language": "hi-IN"
             },
             "buffer_size": 40.0,
             "caching": true
@@ -69,11 +69,11 @@
         }
       }
     ],
-    "agent_welcome_message": "Hello, Glow Salon. I'm the salon's assistant, and this call may be recorded. How can I help you?"
+    "agent_welcome_message": "Namaste, main Asha bol rahi hoon Demo Finance se. Kya meri baat Priya ji se ho rahi hai?"
   },
   "agent_prompts": {
     "task_1": {
-      "system_prompt": "You are the Glow Salon phone receptionist. (Every reply is produced by the receptionist service behind this agent; this prompt is not used by it.)"
+      "system_prompt": "Unused: every reply comes from the Kisht agent behind the custom LLM endpoint."
     }
   }
 }

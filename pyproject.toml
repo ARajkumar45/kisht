@@ -19,19 +19,14 @@ dependencies = [
 
 [project.scripts]
 kisht = "kisht.cli:main"
-receptionist = "receptionist.cli:main"   # old salon CLI, removed after step 4
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not live'"
-markers = ["live: needs the local model server on port 8080 (run with: pytest -m live)"]
+markers = ["live: needs the local model server (run with: pytest -m live)"]
 
 [tool.ruff]
 line-length = 100
-
-[tool.uv.build-backend]
-# receptionist (the M1-M5 salon code) stays until the kisht core replaces it in step 4.
-module-name = ["kisht", "receptionist"]
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14.0"]

@@ -4,6 +4,7 @@
     uv run kisht due [--today YYYY-MM-DD]    # accounts due for a reminder today
     uv run kisht plan                        # the planner agent decides today's outreach queue
     uv run kisht chat --borrower br_0003     # be the borrower; the agent contacts you by chat
+    uv run kisht bridge                      # voice: the endpoint Bolna uses as its LLM (:5050)
 
 While chatting: /state  /audit  /telemetry  /quit
 """
@@ -157,6 +158,24 @@ def _count(items):
     return out
 
 
+def cmd_bridge(args) -> int:
+    import uvicorn
+
+    from kisht.voice_bridge import VoiceBridge, create_app
+
+    cfg = load_config(args.config)
+    lenders = LenderRegistry.from_dir(cfg.lenders_dir)
+    calls = RedisCallState.from_url(cfg.stores.redis_url)
+    ledger = SqliteLedger(cfg.stores.ledger_db)
+    audit = AuditLog(f"{cfg.stores.audit_dir}/voice_{datetime.now():%Y%m%d}.jsonl")
+    guards = {lid: PolicyGuard(lenders.get(lid), ledger, calls, audit) for lid in lenders.ids()}
+    agreements = {lid: Agreement.load(f"{cfg.knowledge_dir}/{lid}.yaml") for lid in lenders.ids()}
+    bridge = VoiceBridge(lenders=lenders, guards=guards, calls=calls,
+                         model=LLMFactory(cfg).for_role("agent"), agreements=agreements)
+    uvicorn.run(create_app(bridge), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="kisht")
     p.add_argument("--config", default="config.yaml")
@@ -171,9 +190,12 @@ def main(argv=None) -> int:
     pl = sub.add_parser("plan")
     pl.add_argument("--at", help="fixed clock, e.g. 2026-11-10T09:00:00+05:30")
     pl.add_argument("--show", type=int, default=15)
+    br = sub.add_parser("bridge")
+    br.add_argument("--host", default="127.0.0.1")
+    br.add_argument("--port", type=int, default=5050)
     args = p.parse_args(argv)
-    return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat,
-            "plan": cmd_plan}[args.cmd](args)
+    return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat, "plan": cmd_plan,
+            "bridge": cmd_bridge}[args.cmd](args)
 
 
 if __name__ == "__main__":
