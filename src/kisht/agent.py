@@ -174,6 +174,7 @@ class Agent:
             result.refused.append(e.code)
             return ""
         result.promise_saved = True
+        self.calls.set_state(self.call_id, did_save_promise=True)
         return self.say("promise_saved", read_back=saved["read_back"])
 
     def _run_model(self, result: TurnResult, extra: list[dict]) -> str:
@@ -201,8 +202,10 @@ class Agent:
                 result.tool_calls.append(tc.name)
                 if not out.ok:
                     result.refused.append(out.content.get("refused", "error"))
-                elif tc.name in ENDING_ACTIONS:
-                    result.ended = tc.name
+                else:
+                    self.calls.set_state(self.call_id, **{f"did_{tc.name}": True})
+                    if tc.name in ENDING_ACTIONS:
+                        result.ended = tc.name
                 self.calls.append(self.call_id, out.as_message(tc.id))
         self._log("stuck", {}, "error")
         return self.say("stuck")
@@ -242,6 +245,44 @@ class Agent:
             self._log("false_claim_blocked", {"reply": text[:300]}, "denied")
             return self.say("cannot_decide")
         return text
+
+    # ---------- end of conversation: outcome + case note (memory) ----------
+
+    def outcome(self) -> str:
+        st = self.calls.get_state(self.call_id)
+        if st.get("did_opt_out"):
+            return "opted_out"
+        if st.get("escalated"):
+            return f"escalated:{st['escalated']}"
+        if st.get("did_save_promise"):
+            return "promise"
+        if st.get("did_send_payment_link"):
+            return "link_sent"
+        if not st.get("identity_verified"):
+            return "not_verified"
+        return "talked"
+
+    def finish(self) -> dict[str, str]:
+        """Write the case note the next conversation will read (after identity is verified).
+        The model summarises; if it cannot, code writes a plain note."""
+        outcome = self.outcome()
+        lines = [f"{m['role']}: {m['content']}" for m in self.calls.messages(self.call_id)
+                 if m["role"] in ("user", "assistant") and m.get("content")]
+        note = f"Outcome: {outcome}."
+        try:
+            reply = self.model.complete([{"role": "user", "content": (
+                "Write a case note for the loan-servicing team in at most two sentences, in "
+                "English: what the borrower said, what was agreed, what to do next. No phone "
+                f"numbers. Outcome code: {outcome}.\n\nCONVERSATION:\n" + "\n".join(lines))}])
+            if reply.content.strip():
+                note = reply.content.strip()[:500]
+        except ModelUnavailable:
+            pass
+        contact_id = self.calls.get(self.call_id, "contact_id")
+        if contact_id:
+            self.guard.ledger.close_contact(contact_id, outcome, note)
+        self.calls.end_call(self.call_id, outcome)
+        return {"outcome": outcome, "note": note}
 
     # ---------- helpers ----------
 

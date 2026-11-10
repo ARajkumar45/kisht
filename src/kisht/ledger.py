@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS escalations (
 CREATE TABLE IF NOT EXISTS followups (
   id TEXT PRIMARY KEY, loan_id TEXT NOT NULL, on_date TEXT NOT NULL, reason TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'planned', call_id TEXT, created_utc TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS plans (
+  plan_date TEXT NOT NULL, loan_id TEXT NOT NULL, channel TEXT NOT NULL, priority TEXT NOT NULL,
+  reason TEXT NOT NULL, approach TEXT NOT NULL, status TEXT NOT NULL, created_utc TEXT NOT NULL,
+  PRIMARY KEY (plan_date, loan_id));
 CREATE INDEX IF NOT EXISTS ix_inst_due ON instalments (due_date);
 CREATE INDEX IF NOT EXISTS ix_contacts_b ON contacts (borrower_id, started_utc);
 """
@@ -312,6 +316,23 @@ class SqliteLedger:
     def followups(self, loan_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.db.execute(
             "SELECT * FROM followups WHERE loan_id=? ORDER BY on_date", (loan_id,))]
+
+    def save_plan_item(self, *, plan_date: date, loan_id: str, channel: str, priority: str,
+                       reason: str, approach: str, status: str) -> None:
+        self.db.execute("INSERT OR REPLACE INTO plans VALUES (?,?,?,?,?,?,?,?)",
+                        (plan_date.isoformat(), loan_id, channel, priority, reason[:200],
+                         approach[:200], status, _now()))
+
+    def plan_for(self, loan_id: str, plan_date: date) -> dict[str, Any] | None:
+        row = self.db.execute("SELECT * FROM plans WHERE loan_id=? AND plan_date=?",
+                              (loan_id, plan_date.isoformat())).fetchone()
+        return dict(row) if row else None
+
+    def missed_promises(self, loan_id: str, today: date) -> list[dict[str, Any]]:
+        """Open promises whose date has passed (the borrower did not pay as promised)."""
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM promises WHERE loan_id=? AND status='open' AND promised_date < ?",
+            (loan_id, today.isoformat()))]
 
     def escalations(self, loan_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.db.execute(

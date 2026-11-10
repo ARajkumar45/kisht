@@ -166,7 +166,10 @@ class PolicyGuard:
 
     @_audited("get_dues")
     def get_dues(self, call_id: str) -> dict[str, Any]:
-        _, loan_id = self._require_identity(call_id)
+        """Account facts plus memory (past case notes, missed promises, today's plan). All of it
+        only after identity is verified, so none of it can reach the wrong person."""
+        borrower_id, loan_id = self._require_identity(call_id)
+        plan = self.ledger.plan_for(loan_id, self.today())
         loan = self.ledger.loan(loan_id)
         dues = self.ledger.dues(loan_id, self.today())
         lo, hi = self._amount_limits(loan_id)
@@ -175,6 +178,11 @@ class PolicyGuard:
                                   for p in self.ledger.open_promises(loan_id)],
                 "allowed_promise": {"min_amount": lo, "max_amount": hi,
                                     "latest_date": self._latest_promise_date(loan_id).isoformat()},
+                "missed_promises": [{"amount": p["amount"], "date": p["promised_date"]}
+                                    for p in self.ledger.missed_promises(loan_id, self.today())],
+                "history": [f"{n['started_utc'][:10]} {n['channel']}: {n['note']}"
+                            for n in self.ledger.recent_notes(borrower_id, limit=3)],
+                "todays_plan": (plan or {}).get("approach", ""),
                 "next_step": ("If the borrower already said when they will pay, call "
                               "record_promise_to_pay now. Otherwise explain the dues and ask.")}
 

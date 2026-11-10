@@ -2,6 +2,7 @@
 
     uv run kisht health                      # each model role: run a tiny real completion
     uv run kisht due [--today YYYY-MM-DD]    # accounts due for a reminder today
+    uv run kisht plan                        # the planner agent decides today's outreach queue
     uv run kisht chat --borrower br_0003     # be the borrower; the agent contacts you by chat
 
 While chatting: /state  /audit  /telemetry  /quit
@@ -21,6 +22,7 @@ from kisht.config import LLMFactory, load_config
 from kisht.guard import GuardRefused, PolicyGuard
 from kisht.ledger import SqliteLedger
 from kisht.lender import LenderRegistry
+from kisht.planner import Planner
 
 DIM, BOLD, END = "\033[2m", "\033[1m", "\033[0m"
 
@@ -121,8 +123,36 @@ def cmd_chat(args) -> int:
         if t.ended:
             print(f"{DIM}  conversation ended by {t.ended}{END}")
             break
-    calls.end_call(agent.call_id, "ended")
+    end = agent.finish()
+    print(f"{DIM}outcome: {end['outcome']} · case note: {end['note']}{END}")
     return 0
+
+
+def cmd_plan(args) -> int:
+    cfg, lender, ledger = _setup(args)
+    calls = RedisCallState.from_url(cfg.stores.redis_url)
+    audit = AuditLog(f"{cfg.stores.audit_dir}/kisht_{datetime.now():%Y%m%d}.jsonl")
+    now = None
+    if args.at:
+        fixed = datetime.fromisoformat(args.at)
+        now = lambda: fixed
+    guard = PolicyGuard(lender, ledger, calls, audit, now=now)
+    result = Planner(guard, LLMFactory(cfg).for_role("planner")).plan()
+    for p in result.queue[: args.show]:
+        print(f"{p.priority:6} {p.channel:5} {p.loan_id}  dpd={p.days_past_due:>2}  "
+              f"{p.reason}  ->  {p.approach}")
+    print(f"{DIM}queued {len(result.queue)} · blocked by guard {len(result.blocked)} "
+          f"{dict(_count(r for _, r in result.blocked))} · left out by the model "
+          f"{len(result.unplanned)} · {result.model_calls} model calls in "
+          f"{result.seconds:.0f}s{END}")
+    return 0
+
+
+def _count(items):
+    out: dict[str, int] = {}
+    for x in items:
+        out[x] = out.get(x, 0) + 1
+    return out
 
 
 def main(argv=None) -> int:
@@ -136,8 +166,12 @@ def main(argv=None) -> int:
     c = sub.add_parser("chat")
     c.add_argument("--borrower", required=True)
     c.add_argument("--at", help="fixed clock for demos, e.g. 2026-11-10T10:00:00+05:30")
+    pl = sub.add_parser("plan")
+    pl.add_argument("--at", help="fixed clock, e.g. 2026-11-10T09:00:00+05:30")
+    pl.add_argument("--show", type=int, default=15)
     args = p.parse_args(argv)
-    return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat}[args.cmd](args)
+    return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat,
+            "plan": cmd_plan}[args.cmd](args)
 
 
 if __name__ == "__main__":
