@@ -1,0 +1,31 @@
+# Which adapter plays which role. Local-first: everything below runs on this Mac.
+# Swap a model server or a role here; no code changes.
+
+llm_servers:
+  local:                                  # mlx_lm.server on this Mac (D79: 1-2 calls at once)
+    base_url: http://localhost:8080/v1
+    max_concurrency: 2
+    queue_timeout_s: 300
+    request_timeout_s: 120
+  # cloud:                                # optional, e.g. for a comparison row in the evals
+  #   base_url: https://api.deepinfra.com/v1/openai
+  #   api_key_env: DEEPINFRA_API_KEY      # the key lives in .env, never here
+  #   max_concurrency: 8
+
+llm_roles:
+  agent:     {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.3, max_tokens: 400}
+  planner:   {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.2, max_tokens: 900}
+  simulator: {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.7, max_tokens: 200}
+
+stores:
+  redis_url: redis://localhost:6379/0
+  ledger_db: data/ledger.sqlite
+  audit_dir: audit
+
+speech:
+  provider: sarvam
+  stt_model: saarika:v2.5
+  tts_model: bulbul:v3
+  speaker: shreya
+
+lenders_dir: lenders

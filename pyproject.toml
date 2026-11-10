@@ -1,7 +1,7 @@
 [project]
-name = "receptionist"
+name = "kisht"
 version = "0.1.0"
-description = "AI phone receptionist for small businesses in Bengaluru"
+description = "EMI repayment agent for Indian lenders: plans, talks (voice + chat, Hindi/English), and is guarded by code"
 readme = "README.md"
 authors = [
     { name = "Raj Kumar Arumugam", email = "armugamvrajkumar121@gmail.com" }
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-receptionist = "receptionist.cli:main"
+receptionist = "receptionist.cli:main"   # old salon CLI, removed after step 4
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -27,6 +27,10 @@ markers = ["live: needs the local model server on port 8080 (run with: pytest -m
 
 [tool.ruff]
 line-length = 100
+
+[tool.uv.build-backend]
+# receptionist (the M1-M5 salon code) stays until the kisht core replaces it in step 4.
+module-name = ["kisht", "receptionist"]
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14.0"]

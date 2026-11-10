@@ -1,0 +1,37 @@
+# A fictional lender. Every limit the policy guard enforces comes from here, not from code.
+id: demo-nbfc
+name: Demo Finance Ltd (fictional NBFC)
+agent_name: Asha
+timezone: Asia/Kolkata
+languages: {allowed: [en, hi], default: hi}
+
+contact:
+  window: {start: "08:00", end: "19:00"}   # RBI recovery-agent rules: no calls before 8 am / after 7 pm
+  max_attempts_per_day: 2
+  max_attempts_per_week: 6
+  channels: [chat, voice]
+
+promises:
+  max_days_after_due: 7          # a promise-to-pay may be at most 7 days after the EMI due date
+  min_part_payment_pct: 25       # a part payment must be at least 25% of the amount due
+  max_open_promises: 1
+
+needs_human:                     # the agent may only escalate these; never decide them
+  - waiver
+  - settlement
+  - restructure
+  - dispute
+  - hardship
+  - bereavement
+
+banned_phrases:                  # blocked in anything the agent says (threats, shaming)
+  - police
+  - jail
+  - legal action today
+  - we will tell your family
+  - we will tell your employer
+  - property seize
+  - ghar aa jayenge
+  - badnaam
+
+escalation_desk: "Demo Finance collections desk, weekdays 10:00-18:00"

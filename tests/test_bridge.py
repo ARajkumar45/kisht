@@ -1,6 +1,9 @@
 """The bridge Bolna talks to, exercised with FastAPI's test client and a scripted model."""
 import json
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import fakeredis
 import pytest
 from conftest import SALON
@@ -19,8 +22,9 @@ SYSTEM = {"role": "system", "content": "## Agent Prompt: ... ## Transcript:"}
 
 def make(model):
     calls = CallStore(fakeredis.FakeRedis(decode_responses=True))
+    fixed = datetime(2026, 11, 9, 9, 0, tzinfo=ZoneInfo("Asia/Kolkata"))   # as in conftest
     bridge = Bridge(BusinessRegistry([load_business(SALON)]), calls, SqliteBookingStore(),
-                    AuditLog(), model)
+                    AuditLog(), model, now=lambda: fixed)
     return bridge, TestClient(create_app(bridge))
 
 

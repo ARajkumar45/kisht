@@ -40,8 +40,9 @@ DEFAULT_RUN = "unpatched-default"   # used when Bolna sends no `user` (unpatched
 
 class Bridge:
     def __init__(self, registry: BusinessRegistry, calls: CallStore, bookings: BookingStore,
-                 audit: AuditLog, model: ModelClient):
+                 audit: AuditLog, model: ModelClient, now=None):
         self.registry = registry
+        self.now = now          # clock for the guards; tests pass a fixed one
         self.calls = calls
         self.bookings = bookings
         self.audit = audit
@@ -59,7 +60,7 @@ class Bridge:
     def guard_for(self, business_id: str) -> Guard:
         if business_id not in self._guards:
             business = self.registry.by_id(business_id)
-            self._guards[business_id] = Guard(business, self.bookings, self.calls, self.audit)
+            self._guards[business_id] = Guard(business, self.bookings, self.calls, self.audit, now=self.now)
         return self._guards[business_id]
 
     def session_for(self, run_id: str, business_id: str) -> tuple[CallSession, bool]:
