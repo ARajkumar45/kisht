@@ -1,0 +1,23 @@
+# docker compose up --build        -> Redis + the Kisht voice bridge on :5050
+# docker compose run --rm kisht chat --borrower br_0009    -> chat with the agent
+# The model server runs on the host (see config.docker.yaml).
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+  kisht:
+    build: .
+    depends_on: [redis]
+    ports: ["5050:5050"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./data:/app/data
+      - ./audit:/app/audit
+    stdin_open: true
+    tty: true
+  ollama:                                  # optional model server for machines without MLX
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    volumes: ["ollama:/root/.ollama"]
+volumes:
+  ollama:

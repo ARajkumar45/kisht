@@ -1,0 +1,24 @@
+# config.yaml for docker compose: same roles, container addresses.
+llm_servers:
+  host:                                   # mlx_lm.server (or any OpenAI-compatible server) on the host
+    base_url: http://host.docker.internal:8080/v1
+    max_concurrency: 2
+    queue_timeout_s: 300
+    request_timeout_s: 120
+  # ollama:                               # alternative inside compose: docker compose --profile ollama up
+  #   base_url: http://ollama:11434/v1
+  #   max_concurrency: 2
+
+llm_roles:
+  agent:     {server: host, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.3, max_tokens: 400}
+  planner:   {server: host, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.2, max_tokens: 900}
+  simulator: {server: host, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.7, max_tokens: 200}
+
+stores:
+  redis_url: redis://redis:6379/0
+  ledger_db: data/ledger.sqlite
+  audit_dir: audit
+
+speech: {provider: sarvam, stt_model: saarika:v2.5, tts_model: bulbul:v3, speaker: shreya}
+lenders_dir: lenders
+knowledge_dir: knowledge
