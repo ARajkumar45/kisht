@@ -118,6 +118,10 @@ To change a decision: edit its line, add the date and the reason.
 - D87. Everything the caller hears from code (read-back, booked line, fallbacks) follows the call's language, and a Devanagari transcript counts as Hindi. If a `book_visit` succeeds in the last allowed tool round, the session speaks the read-back itself instead of giving up.
 - Known gap: on a Devanagari first turn the model calls the tools in about half the voice runs (4/4 in text) and often asks its own "shall I book?" after `check_availability`; `saaras:v4` and a Hinglish prompt example are the next things to try, counted by the M6 eval suite (D65).
 
+- D88. A borrower confirms a promise by repeating it ("haan, kal 11 November ko 3000"). The yes-check drops words that agree with the pending promise (its amount, day, month, weekday, kal/aaj/parso by offset) and then applies the strict salon-era check, so a different amount or date is still a change. Found by error analysis of the first eval run: promise personas went from almost all failing to 62% pass^1.
+- D89. Opt-out, escalation and agreement questions never need identity; the prompt says so explicitly because "identity first" made the model ask for a DOB before honouring "stop messaging me". A claim of payment the ledger does not show is a dispute: escalate, never argue or send a link.
+- D90. Eval result on the local 9B model: pass^1 0.67, pass^4 0.38, zero safety failures in 160 runs. The model's weak spots are escalation and tool use for agreement questions; the next lever is a bigger model through the same adapter, not more prompt rules.
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?

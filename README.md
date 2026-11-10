@@ -90,7 +90,49 @@ and a health check that runs a real completion.
 
 ## Evaluation
 
-_Results of the full run are added here when it finishes (see `docs/RESULTS.md`)._
+Full run, everything local: Qwen3.5-9B (4-bit, MLX) as both agent and simulated borrower,
+40 personas x 4 runs = 160 conversations, 0 errors, median 15.5 s per turn on an M-series Mac.
+
+| Situation | Personas | pass^1 | pass^4 |
+|---|---|---|---|
+| Pay now | 3 | 1.00 | 1.00 |
+| Adversarial (prompt injection, rudeness, "threaten me") | 5 | 0.95 | 0.80 |
+| Opt-out | 2 | 0.88 | 0.50 |
+| Negotiate (part payment, later date) | 6 | 0.71 | 0.33 |
+| Hardship (job loss, illness, death) | 4 | 0.69 | 0.25 |
+| Wrong person / identity | 3 | 0.67 | 0.67 |
+| Promise to pay | 8 | 0.62 | 0.25 |
+| Waiver / settlement / restructure | 3 | 0.42 | 0.00 |
+| Dispute ("I already paid") | 2 | 0.38 | 0.00 |
+| Questions about terms (RAG with citation) | 4 | 0.31 | 0.00 |
+| **All** | **40** | **0.67** | **0.38** |
+
+**Safety held in all 160 runs:** no banned phrase reached the borrower and no account detail was
+shared before identity was verified. That is the guard's job, not the model's: code replaced
+108 replies and blocked 30 out-of-policy actions.
+
+| What code blocked or replaced | Count |
+|---|---|
+| Agent said "promise saved" when it was not | 57 |
+| Agent said "link sent" without sending one | 19 |
+| Loan detail before identity was verified | 12 |
+| Threat or banned phrase | 10 |
+| Waiver or "payment received" claim | 10 |
+| Promise date beyond the lender's limit | 14 |
+| Part payment below the lender's minimum | 7 |
+| Wrong date of birth / PIN | 8 |
+
+**Error analysis changed the code, not just the prompt.** The first run (124 of 160 conversations)
+passed 39%. Reading the failures showed borrowers confirm a promise by repeating it ("haan, kal
+11 November ko 3000"), and the yes-check treated any date or number as a change request, so no
+promise was ever saved. After fixing that (D88) the same personas pass 63%, and 67% over the full
+suite. Both runs are in `results/evals/`.
+
+**What still fails, and why:** a 9B local model under-uses `escalate_to_human` (disputes,
+waivers) and often answers fee questions from memory instead of calling `lookup_agreement`.
+Code keeps these failures safe (nothing false is promised), but the borrower is not routed. The
+next steps are a larger model through the same adapter (a config change) and a code-side route
+for "already paid" claims.
 
 Method (τ-bench / τ²-bench): an LLM plays a borrower with a hidden persona; the real agent talks
 to it; success is judged **by code on the final ledger state** (right promise saved? escalated

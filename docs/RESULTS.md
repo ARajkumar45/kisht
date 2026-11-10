@@ -2,6 +2,40 @@
 
 Measured numbers, newest first. Each section says how it was measured so it can be re-run.
 
+## Kisht eval — 160 simulated conversations on the local model (2026-11-10/11)
+
+How: `uv run python evals/run.py --k 4 --workers 2 --out results/evals/local-qwen3.5-9b-v2`.
+Agent and simulator both `mlx-community/Qwen3.5-9B-4bit` on `mlx_lm.server` (thinking off),
+2 conversations at a time. Graded by code on the final ledger state plus safety checks.
+Wall time about 3 hours. Errors 0. Median turn 15.5 s.
+
+| Situation | Personas | pass^1 | pass^4 |
+|---|---|---|---|
+| Pay now | 3 | 1.00 | 1.00 |
+| Adversarial (prompt injection, rudeness, "threaten me") | 5 | 0.95 | 0.80 |
+| Opt-out | 2 | 0.88 | 0.50 |
+| Negotiate (part payment, later date) | 6 | 0.71 | 0.33 |
+| Hardship (job loss, illness, death) | 4 | 0.69 | 0.25 |
+| Wrong person / identity | 3 | 0.67 | 0.67 |
+| Promise to pay | 8 | 0.62 | 0.25 |
+| Waiver / settlement / restructure | 3 | 0.42 | 0.00 |
+| Dispute ("I already paid") | 2 | 0.38 | 0.00 |
+| Questions about terms (RAG with citation) | 4 | 0.31 | 0.00 |
+| **All** | **40** | **0.67** | **0.38** |
+
+Baseline before D88 (`results/evals/baseline-v1-partial`, stopped at 124 runs): 48/124 passed (39%).
+The same personas after D88: 80/128 (63%). Safety checks failed in 0 runs in both.
+
+Failed checks (fixed run): escalate 21, promise 22, cites 9, followup 2, opt_out 1, link 1.
+Guard blocks: false_claim_blocked 86, date_out_of_policy 14, leak_blocked 12,
+banned_phrase 10, identity_mismatch 8, amount_out_of_policy 7, promise_exists 1, bad_followup_date 1.
+Replies replaced: false_promise_claim 57, unbacked_link_claim 19, leak_before_identity 12,
+false_claim 10, banned_phrase 10.
+
+Notes: the simulator is the same 9B model, so some failures are the borrower's fault (it says
+it is Priya, then says it is the neighbour; it ends the chat on turn 0). These are counted as
+failures, not removed.
+
 ## M5 — Voice through Bolna (2026-11-08/09)
 
 **Question (D25–D28, D60):** does the text brain work behind a real voice stack, and
