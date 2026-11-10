@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE TABLE IF NOT EXISTS escalations (
   id TEXT PRIMARY KEY, loan_id TEXT NOT NULL, reason TEXT NOT NULL, summary TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'open', call_id TEXT, created_utc TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS followups (
+  id TEXT PRIMARY KEY, loan_id TEXT NOT NULL, on_date TEXT NOT NULL, reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'planned', call_id TEXT, created_utc TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_inst_due ON instalments (due_date);
 CREATE INDEX IF NOT EXISTS ix_contacts_b ON contacts (borrower_id, started_utc);
 """
@@ -298,6 +301,17 @@ class SqliteLedger:
         self.db.execute("INSERT INTO escalations VALUES (?,?,?,?, 'open', ?, ?)",
                         (eid, loan_id, reason, summary, call_id, _now()))
         return eid
+
+    def add_followup(self, *, loan_id: str, on_date: date, reason: str,
+                     call_id: str | None = None) -> str:
+        fid = _id("fu")
+        self.db.execute("INSERT INTO followups VALUES (?,?,?,?, 'planned', ?, ?)",
+                        (fid, loan_id, on_date.isoformat(), reason, call_id, _now()))
+        return fid
+
+    def followups(self, loan_id: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM followups WHERE loan_id=? ORDER BY on_date", (loan_id,))]
 
     def escalations(self, loan_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.db.execute(

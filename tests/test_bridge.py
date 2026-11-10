@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import fakeredis
 import pytest
-from conftest import SALON
+from salon_support import SALON
 from fastapi.testclient import TestClient
 from test_session import DETAILS, READ_BACK, FakeModel, text, tool
 

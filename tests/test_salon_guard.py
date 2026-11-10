@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 import fakeredis
 import pytest
-from conftest import IST, SALON
+from salon_support import IST, SALON
 
 from receptionist.audit import AuditLog
 from receptionist.bookings import Booking, SlotTaken, SqliteBookingStore

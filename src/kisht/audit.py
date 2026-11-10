@@ -62,3 +62,16 @@ class AuditLog:
 
     def for_call(self, call_id: str) -> list[dict[str, Any]]:
         return [e for e in self.entries if e["call_id"] == call_id]
+
+    def telemetry(self, entries: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Guard telemetry: how often the agent acted, and how often a rule stopped it."""
+        entries = self.entries if entries is None else entries
+        actions: dict[str, dict[str, int]] = {}
+        blocked_by_rule: dict[str, int] = {}
+        for e in entries:
+            row = actions.setdefault(e["action"], {"ok": 0, "denied": 0, "error": 0})
+            row[e["outcome"]] += 1
+            if e["outcome"] == "denied":
+                rule = (e["detail"] or "unknown").split(":", 1)[0]
+                blocked_by_rule[rule] = blocked_by_rule.get(rule, 0) + 1
+        return {"actions": actions, "blocked_by_rule": blocked_by_rule}

@@ -12,7 +12,7 @@ contact:
   channels: [chat, voice]
 
 promises:
-  max_days_after_due: 7          # a promise-to-pay may be at most 7 days after the EMI due date
+  max_days_after_due: 7          # promise date <= EMI due date + 7 days (or today + 7 if already overdue)
   min_part_payment_pct: 25       # a part payment must be at least 25% of the amount due
   max_open_promises: 1
 
