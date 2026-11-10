@@ -2,6 +2,7 @@
 id: demo-nbfc
 name: Demo Finance Ltd (fictional NBFC)
 agent_name: Asha
+agent_gender: female        # Hindi verb forms differ by gender
 timezone: Asia/Kolkata
 languages: {allowed: [en, hi], default: hi}
 

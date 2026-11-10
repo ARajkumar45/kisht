@@ -159,7 +159,8 @@ class PolicyGuard:
                                f"That does not match. {left} attempt(s) left. Ask again politely; "
                                "never reveal the correct value.")
         self.calls.set_state(call_id, identity_verified=True)
-        return {"verified": True, "name": b["name"]}
+        return {"verified": True, "name": b["name"],
+                "next_step": "Call get_dues now, in this same turn."}
 
     # ---------- account reads ----------
 
@@ -173,7 +174,9 @@ class PolicyGuard:
                 "open_promises": [{"amount": p["amount"], "date": p["promised_date"]}
                                   for p in self.ledger.open_promises(loan_id)],
                 "allowed_promise": {"min_amount": lo, "max_amount": hi,
-                                    "latest_date": self._latest_promise_date(loan_id).isoformat()}}
+                                    "latest_date": self._latest_promise_date(loan_id).isoformat()},
+                "next_step": ("If the borrower already said when they will pay, call "
+                              "record_promise_to_pay now. Otherwise explain the dues and ask.")}
 
     # ---------- R3: promise to pay (two steps) ----------
 

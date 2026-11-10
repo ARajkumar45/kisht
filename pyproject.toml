@@ -18,6 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
+kisht = "kisht.cli:main"
 receptionist = "receptionist.cli:main"   # old salon CLI, removed after step 4
 
 [tool.pytest.ini_options]

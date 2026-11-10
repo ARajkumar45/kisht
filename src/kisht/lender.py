@@ -59,6 +59,7 @@ class Lender(_Strict):
     id: str = Field(pattern=r"^[a-z0-9-]+$")
     name: str
     agent_name: str
+    agent_gender: Literal["female", "male"] = "female"
     timezone: str = "Asia/Kolkata"
     languages: Languages
     contact: Contact
