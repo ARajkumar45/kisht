@@ -9,7 +9,7 @@ def names():
 
 def test_there_is_no_tool_to_waive_settle_or_confirm():
     assert names() == {"verify_identity", "get_dues", "record_promise_to_pay", "send_payment_link",
-                       "schedule_followup", "escalate_to_human", "opt_out"}
+                       "schedule_followup", "escalate_to_human", "opt_out", "lookup_agreement"}
 
 
 def test_no_tool_takes_an_account_id():

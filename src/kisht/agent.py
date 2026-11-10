@@ -28,6 +28,7 @@ from kisht.confirm import (
     leaks_account,
 )
 from kisht.guard import GuardRefused, PolicyGuard
+from kisht.knowledge import Agreement
 from kisht.ports import CallState, ChatModel, ModelUnavailable
 from kisht.prompt import GREETING, build_messages
 from kisht.tools import TOOL_SCHEMAS, ToolRunner
@@ -107,17 +108,19 @@ class TurnResult:
 
 
 class Agent:
-    def __init__(self, call_id: str, guard: PolicyGuard, calls: CallState, model: ChatModel):
+    def __init__(self, call_id: str, guard: PolicyGuard, calls: CallState, model: ChatModel,
+                 agreement: Agreement | None = None):
         self.call_id = call_id
         self.guard = guard
         self.lender = guard.lender
         self.calls = calls
         self.model = model
-        self.tools = ToolRunner(guard)
+        self.tools = ToolRunner(guard, agreement)
 
     @classmethod
     def start(cls, *, guard: PolicyGuard, calls: CallState, model: ChatModel, borrower_id: str,
-              loan_id: str, channel: str) -> tuple[Agent, str]:
+              loan_id: str, channel: str, agreement: Agreement | None = None
+              ) -> tuple[Agent, str]:
         """Bind a new conversation to one account (after the contact rules) and greet.
         Raises GuardRefused if the borrower may not be contacted now."""
         borrower = guard.ledger.borrower(borrower_id)
@@ -131,7 +134,7 @@ class Agent:
         greeting = GREETING.get(lang, GREETING["en"]).format(
             agent=guard.lender.agent_name, lender=_short(guard.lender.name), first_name=first_name)
         calls.append(call_id, {"role": "assistant", "content": greeting})
-        return cls(call_id, guard, calls, model), greeting
+        return cls(call_id, guard, calls, model, agreement), greeting
 
     @property
     def language(self) -> str:

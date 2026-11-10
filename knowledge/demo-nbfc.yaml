@@ -1,0 +1,91 @@
+# Loan agreement terms of the fictional lender (synthetic, for the demo). Each section has an
+# English text and a Hinglish summary so Hindi-speaking borrowers' questions find it too.
+lender_id: demo-nbfc
+document: Demo Finance loan agreement (consumer loans), version 2026-01
+sections:
+  - id: "1"
+    title: Parties and definitions
+    text: >-
+      This agreement is between Demo Finance Ltd (the lender) and the borrower named in the
+      sanction letter. EMI means the equated monthly instalment. Due date means the date each
+      EMI must be paid. Overdue means an EMI not paid by its due date.
+    hi: Agreement lender aur borrower ke beech hai. EMI matlab har mahine ki kisht. Due date matlab kisht bharne ki tareekh.
+  - id: "2"
+    title: EMI amount and due date
+    text: >-
+      The EMI amount and due date are fixed in the sanction letter and the repayment schedule.
+      EMIs are due every month on the same date. The borrower can view the schedule in the app
+      or ask for it by email.
+    hi: EMI ki rakam aur tareekh repayment schedule mein likhi hai. Har mahine usi tareekh ko kisht due hoti hai.
+  - id: "3"
+    title: How to pay
+    text: >-
+      EMIs are collected by NACH auto-debit from the registered bank account. The borrower may
+      also pay by UPI using a payment link sent by the lender, by net banking, or in cash at a
+      branch against a printed receipt. Never pay cash to anyone without an official receipt.
+      Agents never ask for OTPs, PINs or passwords.
+    hi: Payment NACH auto-debit, UPI payment link, net banking ya branch par cash (receipt ke saath) se kar sakte hain. Koi bhi agent OTP ya PIN kabhi nahi maangta.
+  - id: "4"
+    title: Late payment charges
+    text: >-
+      If an EMI is not paid by the due date, a late payment charge of 2% per month is levied on
+      the overdue amount, calculated daily. If a NACH debit is returned unpaid (bounce), a
+      bounce charge of Rs 500 plus GST applies once per bounce. Charges stop when the overdue
+      amount is paid.
+    hi: Late fee ya penalty - overdue rakam par 2% mahina, roz ke hisaab se. NACH bounce hone par Rs 500 + GST bounce charge. Jurmana tab rukta hai jab overdue bhar diya jaye.
+  - id: "5"
+    title: Part payments
+    text: >-
+      The borrower may pay part of an overdue amount at any time. Part payments are applied to
+      the oldest unpaid EMI first. Late charges continue on the unpaid balance.
+    hi: Thoda thoda (part payment) bhi bhar sakte hain. Pehle sabse purani kisht mein jama hota hai. Baaki rakam par late fee lagti rahegi.
+  - id: "6"
+    title: Prepayment and foreclosure
+    text: >-
+      The loan may be closed early (foreclosure) after 6 EMIs have been paid. A foreclosure
+      charge of 3% of the principal outstanding applies for two-wheeler loans and 4% for
+      personal loans; consumer-durable loans have no foreclosure charge.
+    hi: Loan jaldi band (foreclosure / prepayment) 6 EMI ke baad. Two-wheeler par 3%, personal loan par 4% charge, consumer durable par koi charge nahi.
+  - id: "7"
+    title: Changing the EMI date
+    text: >-
+      The borrower may request to change the EMI due date once during the tenure, for example
+      to match a salary date. The request is decided by the lender's team and may add
+      broken-period interest.
+    hi: EMI ki tareekh badalna (salary date ke hisaab se) poore loan mein ek baar request kar sakte hain. Faisla lender ki team karti hai.
+  - id: "8"
+    title: Credit bureau reporting
+    text: >-
+      The lender reports repayment status to credit bureaus (such as CIBIL) every month,
+      including days past due. Late payments can lower the borrower's credit score; paying the
+      overdue amount stops further late reporting from the next cycle.
+    hi: Har mahine CIBIL / credit bureau ko report jaata hai. Late payment se credit score ghat sakta hai. Overdue bharne ke baad agle cycle se late report band.
+  - id: "9"
+    title: Collection conduct
+    text: >-
+      The lender and its agents follow the RBI fair practices code. Borrowers are contacted
+      only between 8 am and 7 pm. Agents must be polite, must not threaten, harass or shame
+      the borrower, and must not contact family, friends or employers about the debt.
+    hi: RBI ke niyam - call sirf subah 8 se shaam 7 baje tak. Agent dhamki, pareshan ya sharminda nahi karega, aur family ya office ko nahi batayega.
+  - id: "10"
+    title: Complaints and grievance redressal
+    text: >-
+      Complaints can be raised with the customer care desk or the Grievance Redressal Officer
+      by email. The lender replies within 30 days. If the complaint is not resolved, the
+      borrower can approach the RBI Ombudsman under the Integrated Ombudsman Scheme.
+    hi: Shikayat (complaint) customer care ya Grievance Officer ko email karein. 30 din mein jawab. Hal na ho toh RBI Ombudsman ke paas ja sakte hain.
+  - id: "11"
+    title: Use of personal data
+    text: >-
+      Personal data is used only to service the loan and as required by law, under the
+      Digital Personal Data Protection Act. Conversations with the lender's agents may be
+      recorded for quality and compliance. The borrower may ask the lender not to contact them
+      by a particular channel.
+    hi: Aapka data sirf loan service ke liye (DPDP Act). Baatcheet record ho sakti hai. Kisi channel par contact band karne ko keh sakte hain.
+  - id: "12"
+    title: Hardship assistance
+    text: >-
+      A borrower facing genuine hardship such as job loss, medical emergency or a death in the
+      family may request assistance. Options such as a short payment holiday or a
+      restructuring are decided case by case by the lender's team; agents cannot approve them.
+    hi: Mushkil samay (naukri gayi, bimari, ghar mein maut) mein madad ki request kar sakte hain. Payment holiday ya restructure ka faisla team karti hai, agent nahi.

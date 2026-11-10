@@ -58,6 +58,7 @@ class Config(_Strict):
     stores: Stores = Stores()
     speech: Speech = Speech()
     lenders_dir: str = "lenders"
+    knowledge_dir: str = "knowledge"
 
     @model_validator(mode="after")
     def _roles_point_at_known_servers(self) -> Config:

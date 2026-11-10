@@ -29,3 +29,4 @@ speech:
   speaker: shreya
 
 lenders_dir: lenders
+knowledge_dir: knowledge          # <lender_id>.yaml: loan agreement for lookup_agreement

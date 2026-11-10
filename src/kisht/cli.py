@@ -20,6 +20,7 @@ from kisht.agent import Agent
 from kisht.audit import AuditLog
 from kisht.config import LLMFactory, load_config
 from kisht.guard import GuardRefused, PolicyGuard
+from kisht.knowledge import Agreement
 from kisht.ledger import SqliteLedger
 from kisht.lender import LenderRegistry
 from kisht.planner import Planner
@@ -80,9 +81,10 @@ def cmd_chat(args) -> int:
         return 2
     model = LLMFactory(cfg).for_role("agent")
     try:
+        agreement = Agreement.load(f"{cfg.knowledge_dir}/{lender.id}.yaml")
         agent, greeting = Agent.start(guard=guard, calls=calls, model=model,
                                       borrower_id=args.borrower, loan_id=loans[0]["id"],
-                                      channel="chat")
+                                      channel="chat", agreement=agreement)
     except GuardRefused as e:
         print(f"Not allowed to contact now: {e.code}: {e.message}", file=sys.stderr)
         return 1

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from kisht.guard import GuardRefused, PolicyGuard
+from kisht.knowledge import Agreement
 
 
 def _fn(name: str, description: str, properties: dict[str, Any], required: list[str]) -> dict:
@@ -52,6 +53,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                                                "complaint"]},
          "summary": {"type": "string", "description": "one or two sentences for the team"}},
         ["reason", "summary"]),
+    _fn("lookup_agreement",
+        "Search the loan agreement for terms: late fees, bounce charges, how to pay, part "
+        "payments, foreclosure, changing the EMI date, credit score (CIBIL), complaints, data, "
+        "hardship help. Answer from the result and cite the section number. Needs no identity "
+        "check (general terms only).",
+        {"question": {"type": "string"}}, ["question"]),
     _fn("opt_out",
         "The person asks not to be contacted again. Honour it at once.", {}, []),
 ]
@@ -71,8 +78,9 @@ class ToolResult:
 
 
 class ToolRunner:
-    def __init__(self, guard: PolicyGuard):
+    def __init__(self, guard: PolicyGuard, agreement: Agreement | None = None):
         self.guard = guard
+        self.agreement = agreement
         g = guard
         self._dispatch = {
             "verify_identity": lambda c, a: g.verify_identity(
@@ -86,6 +94,7 @@ class ToolRunner:
             "escalate_to_human": lambda c, a: g.escalate_to_human(
                 c, reason=str(a["reason"]), summary=str(a["summary"])),
             "opt_out": lambda c, a: g.opt_out(c),
+            "lookup_agreement": lambda c, a: self._lookup(c, str(a["question"])),
         }
 
     def run(self, call_id: str, name: str, arguments: str) -> ToolResult:
@@ -105,6 +114,21 @@ class ToolRunner:
                                "read_back": result["read_back"],
                                "say": f"So you will pay {result['read_back']}. Is that right?"})
         return ToolResult({"ok": True, **result})
+
+    def _lookup(self, call_id: str, question: str) -> dict[str, Any]:
+        if self.agreement is None:
+            raise GuardRefused("no_agreement", "The agreement is not available; offer to have "
+                               "the team answer.")
+        hits = self.agreement.search(question)
+        self.guard.audit.record(call_id=call_id, tenant_id=self.guard.lender.id,
+                                action="lookup_agreement", args={"question": question[:200]},
+                                outcome="ok", detail=",".join(s.id for s in hits))
+        if not hits:
+            return {"found": False, "message": "Nothing in the agreement matches. Do not guess: "
+                    "offer to pass the question to the team."}
+        return {"found": True, "document": self.agreement.document,
+                "sections": [{"section": s.id, "title": s.title, "text": s.text} for s in hits],
+                "cite_as": "Section " + hits[0].id}
 
     def _bad(self, call_id: str, name: str, message: str) -> ToolResult:
         self.guard.audit.record(call_id=call_id, tenant_id=self.guard.lender.id, action=name,
