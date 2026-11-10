@@ -14,6 +14,8 @@ One borrower turn:
 """
 from __future__ import annotations
 
+from datetime import date
+
 import re
 import time
 from dataclasses import dataclass, field
@@ -24,7 +26,7 @@ from kisht.confirm import (
     claims_payment_received,
     claims_promise_saved,
     claims_waiver,
-    is_clear_yes,
+    is_yes_to_promise,
     leaks_account,
 )
 from kisht.guard import GuardRefused, PolicyGuard
@@ -61,6 +63,10 @@ SAY = {
     "promise_saved": {
         "en": "Thank you, noted: {read_back}.",
         "hi": "Dhanyavaad, note kar liya: {read_back}.",
+    },
+    "read_back": {
+        "en": "So you will pay {read_back}. Is that right?",
+        "hi": "Confirm kar doon: {read_back}. Sahi hai?",
     },
     "fallback": {
         "en": "Sorry, I'm having a technical problem. Our team will contact you. Thank you.",
@@ -154,7 +160,9 @@ class Agent:
         pending = self.calls.get(self.call_id, "pending_promise")
         extra: list[dict] = []
         prefix = ""
-        if pending and is_clear_yes(text):
+        if pending and is_yes_to_promise(text, pending["amount"],
+                                         date.fromisoformat(pending["pay_date"]),
+                                         self.guard.today()):
             prefix = self._save_promise(pending, result)
             if result.promise_saved:
                 extra = [AFTER_PROMISE]
@@ -237,7 +245,7 @@ class Agent:
             result.replaced.append("false_promise_claim")
             self._log("false_claim_blocked", {"reply": text[:300]}, "denied")
             pending = self.calls.get(self.call_id, "pending_promise")
-            return (f"So you will pay {pending['read_back']}. Is that right?" if pending
+            return (self.say("read_back", read_back=pending["read_back"]) if pending
                     else self.say("stuck"))
         if claims_link_sent(text) and "send_payment_link" not in result.tool_calls:
             result.replaced.append("unbacked_link_claim")

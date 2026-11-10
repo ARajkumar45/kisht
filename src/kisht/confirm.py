@@ -70,6 +70,37 @@ def is_clear_yes(text: str) -> bool:
 
 
 
+_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august",
+           "september", "october", "november", "december"]
+_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+_HINDI_DAYS = ["somvar", "mangalvar", "budhvar", "guruvar", "shukravar", "shanivar", "ravivar"]
+
+
+def is_yes_to_promise(text: str, amount: int, pay_date, today) -> bool:
+    """A yes to a promise read-back. Borrowers confirm by repeating it ("haan, kal 3000
+    de dungi"), so words that AGREE with the pending promise are dropped before the strict
+    check. Any other number, day or time still means a change, not a yes (D88)."""
+    t = text.lower()
+    agree_numbers = {str(amount), str(pay_date.day), f"{pay_date.day:02d}", str(pay_date.year)}
+    for num in re.findall(r"\d[\d,]*", t):
+        if num.replace(",", "") in agree_numbers:
+            t = t.replace(num, " ", 1)
+    agree_words = {_MONTHS[pay_date.month - 1], _MONTHS[pay_date.month - 1][:3],
+                   _DAYS[pay_date.weekday()], _HINDI_DAYS[pay_date.weekday()]}
+    offset = (pay_date - today).days
+    if offset == 0:
+        agree_words |= {"today", "aaj", "आज"}
+    elif offset == 1:
+        agree_words |= {"tomorrow", "kal", "कल"}
+    elif offset == 2:
+        agree_words |= {"parso", "परसों"}
+    for w in agree_words:
+        t = re.sub(rf"(?<![\w\u0900-\u097f]){re.escape(w)}(?![\w\u0900-\u097f])", " ", t)
+    t = re.sub(r"₹|\b(rs|rupa(ye|ya|yaa)|rupees?)\b\.?", " ", t)
+    return is_clear_yes(t)
+
+
+
 _PROMISE_SAVED = re.compile(
     r"\b(promise (is |has been )?(noted|recorded|saved|registered)|(i'?ve|i have) (noted|recorded"
     r"|saved)|note kar (liya|li)|record kar (liya|diya|di)|darj kar (liya|diya)|"

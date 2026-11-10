@@ -142,7 +142,7 @@ def test_false_promise_claim_becomes_the_read_back(guard, calls, account):
                       text("Great, I have recorded your promise!"))
     agent, _ = start(guard, calls, account, model)
     t = agent.handle("PIN 560038, 14 ko 3000")
-    assert t.replaced == ["false_promise_claim"] and t.reply.endswith("Is that right?")
+    assert t.replaced == ["false_promise_claim"] and t.reply.endswith(("Is that right?", "Sahi hai?"))
 
 
 def test_escalation_ends_the_conversation(guard, calls, account, ledger):
@@ -232,4 +232,4 @@ def test_confirmation_claim_without_a_saved_promise_is_replaced(guard, calls, ac
     agent, _ = start(guard, calls, account, model)
     agent.handle("PIN 560038, 14 ko 3000")
     t = agent.handle("Thank you")                      # not a clear yes
-    assert t.replaced == ["false_promise_claim"] and t.reply.endswith("Is that right?")
+    assert t.replaced == ["false_promise_claim"] and t.reply.endswith(("Is that right?", "Sahi hai?"))
