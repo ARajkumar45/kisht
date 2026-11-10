@@ -81,7 +81,6 @@ _WAIVED = re.compile(
 _NOT = re.compile(r"\b(cannot|can't|can not|not able|nahi|nahin|unable)\b")
 _PAID = re.compile(r"\b(payment (is |has been )?received|we('ve| have) received your payment|"
                    r"payment mil gay(a|i))\b")
-_MONEY = re.compile(r"(rs\.?|₹|rupees?|inr)\s*\d|\d[\d,]*\s*(rs|rupees?|₹)", re.IGNORECASE)
 
 
 def claims_promise_saved(reply: str) -> bool:
@@ -100,8 +99,20 @@ def claims_payment_received(reply: str) -> bool:
     return bool(_PAID.search(reply.lower()))
 
 
-def leaks_account(reply: str) -> bool:
-    return bool(_MONEY.search(reply))
+_STATUS = re.compile(
+    r"\b(your|aapka|aapki|aapke|aapko|tumhara|tumhari)\b\W+(?:\w+\W+){0,5}?"
+    r"(overdue|outstanding|bakaya|baaki|pending|peeche|late|missed|due|default)\b",
+    re.IGNORECASE)
+
+
+def leaks_account(reply: str, amounts: set[int] | frozenset[int] = frozenset()) -> bool:
+    """Before identity is verified: does the reply reveal THIS borrower's money or loan state?
+    That is: one of the account's real amounts, or 'your ... overdue / aapka ... baaki' and the
+    like. General terms ("2% late fee on overdue amounts", "Rs 500 bounce charge") are allowed."""
+    for m in re.finditer(r"\d[\d,]*", reply):
+        if int(m.group().replace(",", "")) in amounts:
+            return True
+    return bool(_STATUS.search(reply))
 
 
 _LINK_SENT = re.compile(

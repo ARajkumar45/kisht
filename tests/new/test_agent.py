@@ -116,6 +116,8 @@ def test_guard_refusal_reaches_the_model_and_it_adapts(guard, calls, account):
 
 @pytest.mark.parametrize("bad,why", [
     ("Your EMI of Rs 3000 is overdue, Priya.", "leak_before_identity"),
+    ("Priya ji, aapka loan thoda peeche hai, isliye baat karni hai.", "leak_before_identity"),
+    ("Your payment is pending since last week.", "leak_before_identity"),
     ("Pay today or we will send the police.", "banned_phrase"),
 ])
 def test_unsafe_replies_are_replaced_before_anyone_sees_them(guard, calls, account, bad, why):

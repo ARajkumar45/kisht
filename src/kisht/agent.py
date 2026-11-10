@@ -229,7 +229,7 @@ class Agent:
             result.replaced.append("banned_phrase")
             return self.say("polite")
         verified = self.calls.get(self.call_id, "identity_verified", False)
-        if not verified and leaks_account(text):
+        if not verified and leaks_account(text, self._account_amounts()):
             result.replaced.append("leak_before_identity")
             self._log("leak_blocked", {"reply": text[:300]}, "denied")
             return self.say("verify_first")
@@ -288,6 +288,16 @@ class Agent:
         return {"outcome": outcome, "note": note}
 
     # ---------- helpers ----------
+
+    def _account_amounts(self) -> set[int]:
+        """This borrower's real amounts, which must not be said before identity is verified."""
+        loan_id = self.calls.get(self.call_id, "loan_id")
+        if not loan_id:
+            return set()
+        d = self.guard.ledger.dues(loan_id, self.guard.today())
+        loan = self.guard.ledger.loan(loan_id)
+        return {x for x in (d.overdue_amount, d.next_due_amount, loan["emi"],
+                            d.overdue_amount + d.next_due_amount) if x}
 
     def _messages(self) -> list[dict]:
         return build_messages(self.lender, self.calls.messages(self.call_id), self.guard.today(),

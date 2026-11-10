@@ -1,0 +1,29 @@
+{
+  "runs": 3,
+  "personas": 3,
+  "k": 1,
+  "pass_1": 0.0,
+  "pass_k": 0.0,
+  "by_category": {
+    "hardship": {
+      "personas": 1,
+      "pass_1": 0.0
+    },
+    "identity": {
+      "personas": 1,
+      "pass_1": 0.0
+    },
+    "promise": {
+      "personas": 1,
+      "pass_1": 0.0
+    }
+  },
+  "failed_checks": {
+    "promise": 1,
+    "escalate": 2
+  },
+  "guard_blocks": {},
+  "replaced": {},
+  "median_turn_s": 8.67,
+  "errors": 0
+}
