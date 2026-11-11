@@ -16,7 +16,9 @@ export default function Chat() {
   const [err, setErr] = useState<string | null>(null);
   const [ended, setEnded] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [msgs, busy]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs, busy]);
 
   const start = async (b: Borrower) => {
     setWho(b); setMsgs([]); setEnded(null); setErr(null); setBusy(true);

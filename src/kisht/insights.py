@@ -11,7 +11,7 @@ import json
 import sqlite3
 import tempfile
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +119,17 @@ class InsightsStore:
     def close_call(self, call_id: str, *, outcome: str, note: str) -> None:
         self.db.execute("UPDATE calls SET status='ended', ended_utc=?, outcome=?, note=? "
                         "WHERE call_id=?", (_now(), outcome, note, call_id))
+
+    def close_stale(self, max_idle_minutes: int = 30) -> int:
+        """Live calls with no turn for a while were abandoned (a closed chat tab, a dropped
+        line, a stopped simulation). Close them so the live view stays truthful."""
+        cutoff = (datetime.now(UTC) - timedelta(minutes=max_idle_minutes)).isoformat()
+        cur = self.db.execute(
+            "UPDATE calls SET status='ended', outcome='abandoned', ended_utc=?, "
+            "note=COALESCE(note, 'No activity for a while; closed automatically.') "
+            "WHERE status='live' AND COALESCE((SELECT MAX(at_utc) FROM turns t "
+            "WHERE t.call_id = calls.call_id), started_utc) < ?", (_now(), cutoff))
+        return cur.rowcount
 
     def call(self, call_id: str) -> dict[str, Any] | None:
         return _row(self.db.execute("SELECT * FROM calls WHERE call_id=?",

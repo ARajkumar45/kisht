@@ -192,6 +192,7 @@ def create_api(rt: Runtime) -> FastAPI:
 
     @app.get("/api/live")
     def live() -> dict[str, Any]:
+        rt.insights.close_stale()
         live_calls = []
         for c in rt.insights.calls(status="live", limit=50):
             t = rt.insights.turns(c["call_id"])
@@ -380,6 +381,7 @@ def create_api(rt: Runtime) -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
-            return FileResponse(DIST / "index.html")
+            # The page shell must never be cached: asset names change on every build.
+            return FileResponse(DIST / "index.html", headers={"Cache-Control": "no-cache"})
 
     return app

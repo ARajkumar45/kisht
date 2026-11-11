@@ -48,3 +48,14 @@ def test_a_guard_refusal_marks_the_tool_span_as_an_error(guard, calls, account):
     span = next(s for s in store.spans(agent.call_id) if s["name"] == "execute_tool")
     assert span["status"] == "ERROR" and span["attrs"]["kisht.refused"] == "identity_mismatch"
     assert store.call(agent.call_id)["blocks"] == 1
+
+
+def test_silent_live_calls_are_closed_as_abandoned():
+    store = InsightsStore()
+    store.open_call(call_id="c1", lender_id="x", borrower_id=None, loan_id=None,
+                    borrower_name="A", channel="chat", language="en", greeting="Hi")
+    store.db.execute("UPDATE turns SET at_utc='2020-01-01T00:00:00+00:00'")
+    store.open_call(call_id="c2", lender_id="x", borrower_id=None, loan_id=None,
+                    borrower_name="B", channel="chat", language="en", greeting="Hi")
+    assert store.close_stale(30) == 1
+    assert store.call("c1")["outcome"] == "abandoned" and store.call("c2")["status"] == "live"
