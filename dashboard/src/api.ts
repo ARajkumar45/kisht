@@ -67,7 +67,10 @@ export type CallDetail = {
   spans: Span[];
   review: Review | null;
   actions: Record<"promises" | "links" | "escalations" | "followups", Record<string, unknown>[]>;
+  audit: AuditEntry[];
 };
+
+export type AuditEntry = { time: string; action: string; outcome: "ok" | "denied" | "error"; detail: string };
 
 export type Overview = {
   calls: number;

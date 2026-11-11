@@ -1,9 +1,32 @@
-# Decisions — AI Receptionist
+# Decisions — Kisht
 
-One line per decision. Rewritten 2026-11-08 from the new project brief, which replaces
-the earlier D1–D42 list and docs/PLAN.md (both kept in git history). Some items from the
-earlier list were kept on purpose and are marked *(kept)*.
-To change a decision: edit its line, add the date and the reason.
+One line per decision. To change one: edit its line, add the date and the reason.
+
+This repository began as a phone receptionist for small businesses (milestones M1 to M5). The
+decisions from that phase are kept below, numbered D1 to D87, because Kisht reuses what they
+built: the voice path, prompt caching, concurrency limits and the "code confirms, the model
+never does" pattern. Decisions made for Kisht itself come first.
+
+## Kisht: EMI repayment agent and contact centre
+- Design rule: the model plans and decides; code guards only what must never go wrong (calling hours, threats, account details before identity, money changes without a human), and every guard decision is audited.
+- Local first: the default run is entirely on one laptop; every outside piece (model per role, speech, channel, store, lender policy, language) sits behind a small interface chosen in config.
+- Synthetic borrowers only. Nobody real is ever contacted.
+- D88. A borrower confirms a promise by repeating it ("haan, kal 11 November ko 3000"). The yes-check drops words that agree with the pending promise (its amount, day, month, weekday, kal/aaj/parso by offset) and then applies the strict salon-era check, so a different amount or date is still a change. Found by error analysis of the first eval run: promise personas went from almost all failing to 62% pass^1.
+- D89. Opt-out, escalation and agreement questions never need identity; the prompt says so explicitly because "identity first" made the model ask for a DOB before honouring "stop messaging me". A claim of payment the ledger does not show is a dispute: escalate, never argue or send a link.
+- D90. Eval result on the local 9B model: pass^1 0.67, pass^4 0.38, zero safety failures in 160 runs. The model's weak spots are escalation and tool use for agreement questions; the next lever is a bigger model through the same adapter, not more prompt rules.
+- D91. Language is a plug-in: one module per language (kisht/languages/<code>.py) holds every language-specific line, word list and phrase. Code checks use English plus the call's language, not every language at once, so a Hindi word cannot be misread as a Tamil "no". Tamil and Telugu speech goes to Sarvam STT with ta-IN / te-IN; Hindi keeps en-IN (D84). Code lines are in native script so text-to-speech reads them correctly; on a voice call the model is told to reply in native script too.
+- D92. The 40 Tamil/Telugu borrowers in the loan book use their own random stream, so the original 200 (and every demo and doc that names them) stay identical.
+- D93. Three fixes found by the Tamil/Telugu runs, all general: time-of-day words do not block a yes to a date-only promise; identical tool calls repeated within one turn stop the loop (code reads back a pending promise instead); "I'll record it" without the tool counts as a stall and gets one retry. Promise personas went from 1/4 to 4/4.
+- D94. Contact-centre data lives in its own store (insights.sqlite), not the ledger: the ledger is the lender's book of money and promises; the call log, traces, reviews and desk state are the contact centre's. Both are written as things happen, so live views need no extra plumbing.
+- D95. Tracing uses OpenTelemetry with GenAI attribute names, exported to our own store for the dashboard and optionally over OTLP. All turns of a call share a trace id derived from the call id, so a conversation is one trace even across separate voice requests. Borrower text stays out of span attributes (it is in the turn log); spans carry timings, tokens, tool names and guard outcomes.
+- D96. Post-call QA: the model judges what needs judgement on the lender's scorecard; anything code knows for sure is filled in by code (identity before details is enforced by the guard, so it cannot fail), and compliance counts come from the guard's blocks, never from the model.
+- D97. Dashboard in React + TypeScript with no chart library (CSS bars), built by Vite and served by the same FastAPI process; Docker builds it in a Node stage.
+- D98. A conversation is wrapped up the same way whoever ended it: case note, ledger contact closed, post-call review. Chats end on "End"; a voice call just goes quiet, so a sweeper finishes live calls that have been silent (voice 5 minutes, chat 30) and a Redis lock makes sure two processes never wrap up the same call. On the voice path the wrap-up runs in the background so the caller hears the last reply at once.
+- D99. The reviewer model is given the facts code recorded (identity verified or not and in which turn, tools used, promise saved, link sent, what was blocked) and told not to contradict them. Found when a review said "failed to verify identity" on a call where identity was verified. Its remaining judgement calls are still unmeasured against human labels; that is the next quality step.
+- D100. Dates reach the model in words with the weekday (get_dues.dates_in_words). The model must never work out a weekday itself: it called a Saturday "Sunday" in Tamil.
+- D101. A call's audit trail is read from the audit files on disk, because each process (chat, voice bridge, simulator, dashboard) writes its own file.
+
+# Earlier phase: phone receptionist (M1 to M5), kept for the record
 
 ## Product
 - D1. Product: an AI phone receptionist for small businesses in Bengaluru, India.
@@ -118,21 +141,7 @@ To change a decision: edit its line, add the date and the reason.
 - D87. Everything the caller hears from code (read-back, booked line, fallbacks) follows the call's language, and a Devanagari transcript counts as Hindi. If a `book_visit` succeeds in the last allowed tool round, the session speaks the read-back itself instead of giving up.
 - Known gap: on a Devanagari first turn the model calls the tools in about half the voice runs (4/4 in text) and often asks its own "shall I book?" after `check_availability`; `saaras:v4` and a Hinglish prompt example are the next things to try, counted by the M6 eval suite (D65).
 
-- D88. A borrower confirms a promise by repeating it ("haan, kal 11 November ko 3000"). The yes-check drops words that agree with the pending promise (its amount, day, month, weekday, kal/aaj/parso by offset) and then applies the strict salon-era check, so a different amount or date is still a change. Found by error analysis of the first eval run: promise personas went from almost all failing to 62% pass^1.
-- D89. Opt-out, escalation and agreement questions never need identity; the prompt says so explicitly because "identity first" made the model ask for a DOB before honouring "stop messaging me". A claim of payment the ledger does not show is a dispute: escalate, never argue or send a link.
-- D90. Eval result on the local 9B model: pass^1 0.67, pass^4 0.38, zero safety failures in 160 runs. The model's weak spots are escalation and tool use for agreement questions; the next lever is a bigger model through the same adapter, not more prompt rules.
-
-- D91. Language is a plug-in: one module per language (kisht/languages/<code>.py) holds every language-specific line, word list and phrase. Code checks use English plus the call's language, not every language at once, so a Hindi word cannot be misread as a Tamil "no". Tamil and Telugu speech goes to Sarvam STT with ta-IN / te-IN; Hindi keeps en-IN (D84). Code lines are in native script so text-to-speech reads them correctly; on a voice call the model is told to reply in native script too.
-- D92. The 40 Tamil/Telugu borrowers in the loan book use their own random stream, so the original 200 (and every demo and doc that names them) stay identical.
-
-- D93. Three fixes found by the Tamil/Telugu runs, all general: time-of-day words do not block a yes to a date-only promise; identical tool calls repeated within one turn stop the loop (code reads back a pending promise instead); "I'll record it" without the tool counts as a stall and gets one retry. Promise personas went from 1/4 to 4/4.
-
-- D94. Contact-centre data lives in its own store (insights.sqlite), not the ledger: the ledger is the lender's book of money and promises; the call log, traces, reviews and desk state are the contact centre's. Both are written as things happen, so live views need no extra plumbing.
-- D95. Tracing uses OpenTelemetry with GenAI attribute names, exported to our own store for the dashboard and optionally over OTLP. All turns of a call share a trace id derived from the call id, so a conversation is one trace even across separate voice requests. Borrower text stays out of span attributes (it is in the turn log); spans carry timings, tokens, tool names and guard outcomes.
-- D96. Post-call QA: the model judges what needs judgement on the lender's scorecard; anything code knows for sure is filled in by code (identity before details is enforced by the guard, so it cannot fail), and compliance counts come from the guard's blocks, never from the model.
-- D97. Dashboard in React + TypeScript with no chart library (CSS bars), built by Vite and served by the same FastAPI process; Docker builds it in a Node stage.
-
-## Open questions
+## Open questions (from the receptionist phase)
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?
 - O3. Which cloud model API for the pilot, and which cloud server and region?

@@ -131,6 +131,28 @@ class InsightsStore:
             "WHERE t.call_id = calls.call_id), started_utc) < ?", (_now(), cutoff))
         return cur.rowcount
 
+    def live_with_last_activity(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.db.execute(
+            "SELECT c.call_id, c.lender_id, c.channel, COALESCE((SELECT MAX(at_utc) FROM turns t "
+            "WHERE t.call_id = c.call_id), c.started_utc) AS last_at FROM calls c "
+            "WHERE c.status='live'")]
+
+    def close_abandoned(self, call_id: str) -> int:
+        cur = self.db.execute(
+            "UPDATE calls SET status='ended', outcome='abandoned', ended_utc=?, "
+            "note=COALESCE(note, 'No activity for a while; closed automatically.') "
+            "WHERE call_id=? AND status='live'", (_now(), call_id))
+        return cur.rowcount
+
+    def delete_spans(self, call_id: str, name: str) -> None:
+        self.db.execute("DELETE FROM spans WHERE call_id=? AND name=?", (call_id, name))
+
+    def turn_stats(self) -> list[dict[str, Any]]:
+        """Speed and token numbers for every borrower turn, in one query."""
+        return [dict(r) for r in self.db.execute(
+            "SELECT t.seconds, t.model_calls, t.prompt_tokens, t.cached_tokens FROM turns t "
+            "JOIN calls c ON c.call_id = t.call_id WHERE t.borrower != '' AND c.status='ended'")]
+
     def call(self, call_id: str) -> dict[str, Any] | None:
         return _row(self.db.execute("SELECT * FROM calls WHERE call_id=?",
                                     (call_id,)).fetchone())

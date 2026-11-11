@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from kisht.agent import Agent
+from kisht.audit import entries_for_call
 from kisht.guard import GuardRefused
 from kisht.review import Reviewer
 from kisht.runtime import Runtime
@@ -98,9 +99,11 @@ def create_api(rt: Runtime) -> FastAPI:
         escalated = Counter(c["outcome"].split(":")[1] for c in ended
                             if (c["outcome"] or "").startswith("escalated:"))
         wrong = escalated.get("wrong_person", 0)
-        reached = sum(1 for c in ended if c["outcome"] != "not_verified") - wrong
+        # Abandoned or interrupted conversations reached nobody we can vouch for.
+        reached = sum(1 for c in ended if c["outcome"] not in (
+            "not_verified", "abandoned", "interrupted")) - wrong
         reviews = rt.insights.reviews()
-        turns = [t for c in ended for t in rt.insights.turns(c["call_id"]) if t["borrower"]]
+        turns = rt.insights.turn_stats()
         prompt = sum(t["prompt_tokens"] or 0 for t in turns)
         cached = sum(t["cached_tokens"] or 0 for t in turns)
         blocked: Counter = Counter()
@@ -186,7 +189,8 @@ def create_api(rt: Runtime) -> FastAPI:
                 "spans": rt.insights.spans(call_id), "review": rt.insights.review(call_id),
                 "actions": {"promises": rows("promises"), "links": rows("payment_links"),
                             "escalations": rows("escalations"), "followups": rows("followups")},
-                "audit": [e for e in rt.audit.entries if e["call_id"] == call_id]}
+                "audit": entries_for_call(rt.cfg.stores.audit_dir, call_id)
+                or [e for e in rt.audit.entries if e["call_id"] == call_id]}
 
     # ---------- supervisor: live calls + alerts ----------
 

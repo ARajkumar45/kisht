@@ -53,6 +53,25 @@ export default function CallDetail() {
           </Card>
         </div>
       </div>
+      <Card title="Audit trail" right={<span className="muted small">every action and every refusal, as code recorded it</span>}>
+        {!data.audit.length ? <div className="muted">No audit entries on disk for this call.</div> : (
+          <details>
+            <summary>{data.audit.length} entries · {data.audit.filter((a) => a.outcome !== "ok").length} denied or failed</summary>
+            <table>
+              <tbody>
+                {data.audit.map((a, i) => (
+                  <tr key={i}>
+                    <td className="muted small">{new Date(a.time).toLocaleTimeString("en-IN")}</td>
+                    <td><code>{a.action}</code></td>
+                    <td><Badge tone={a.outcome === "ok" ? "good" : "bad"}>{a.outcome}</Badge></td>
+                    <td className="wrap muted small">{a.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        )}
+      </Card>
       <Card title="Trace" right={<span className="muted small">OpenTelemetry spans · {spans.length} steps · idle gaps shortened · click one</span>}>
         <Trace spans={spans} />
       </Card>

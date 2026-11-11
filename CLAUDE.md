@@ -1,23 +1,18 @@
-# CLAUDE.md — AI Receptionist
+# CLAUDE.md — Kisht
 
 ## Project summary
-An AI phone receptionist for small businesses in Bengaluru, India. It answers the calls
-staff miss (call forwarding), answers questions from the business's config, and books
-visits only after the caller says yes. Each business is one config file. Built solo,
-production-grade, designed to handle many calls at once and sell to more businesses.
-Free and trial tools first; money is spent only at three gates (₹0 → small top-up →
-≤ ₹3,000/month pilot).
+Kisht is an EMI repayment agent for Indian lenders with a contact-centre dashboard around it.
+The model plans and decides; code guards what must never go wrong. Runs fully local.
 
-- Decisions: `docs/DECISIONS.md` (one line each, plus open questions)
-- System design and milestones: `docs/ARCHITECTURE.md`
-- Voice engine: self-hosted open-source Bolna at `~/Documents/mac/bolna_project`
+- What it is and how to run it: `README.md`
+- Design: `docs/ARCHITECTURE.md` · Decisions: `docs/DECISIONS.md` · Numbers: `docs/RESULTS.md`
 - Local model: Qwen3.5-9B (4-bit) via `mlx_lm.server`, OpenAI-compatible, port 8080
-- Python 3.12 via `uv`
+- Python 3.12 via `uv`; dashboard in `dashboard/` (React + TypeScript, Vite)
 
-## How to work with me (I am learning)
-- Small steps. One milestone at a time. Never build ahead.
-- Use plan mode for anything bigger than one file and show me the plan first.
-- After every change, … *(the brief was cut off here: rest to be added)*
-
-## Engineering rules
-*(Not received yet: the brief was cut off before this section. To be added.)*
+## Rules
+- Synthetic borrowers only. Never contact a real person.
+- Secrets live in `.env`, which is never committed. Never print or commit a key.
+- Every change keeps `uv run pytest -q`, `uv run ruff check src tests` and
+  `cd dashboard && npm run build` green.
+- A new guard rule or reply check comes with a test that shows the failure it prevents.
+- Measured numbers go in `docs/RESULTS.md` with how they were measured.

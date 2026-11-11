@@ -10,3 +10,4 @@ audit/*.jsonl
 results/voice_probe/
 *.sqlite-wal
 *.sqlite-shm
+data/bolna_agents.json

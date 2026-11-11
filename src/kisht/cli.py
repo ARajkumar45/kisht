@@ -167,9 +167,22 @@ def cmd_bridge(args) -> int:
     rt = build(args.config, audit_name="voice")
     bridge = VoiceBridge(lenders=rt.lenders, guards=rt.guards, calls=rt.calls,
                          model=rt.models.for_role("agent"), agreements=rt.agreements,
-                         insights=rt.insights)
+                         insights=rt.insights, reviewer_model=_reviewer(rt))
+    _sweeper(rt)                 # a call that just goes quiet still gets its note and review
     uvicorn.run(create_app(bridge), host=args.host, port=args.port, log_level="warning")
     return 0
+
+
+def _reviewer(rt):
+    return rt.models.for_role("reviewer") if "reviewer" in rt.cfg.llm_roles else None
+
+
+def _sweeper(rt):
+    from kisht.wrapup import start_sweeper
+
+    return start_sweeper(insights=rt.insights, calls=rt.calls, guards=rt.guards,
+                         agent_model=rt.models.for_role("agent"), reviewer_model=_reviewer(rt),
+                         agreements=rt.agreements)
 
 
 def cmd_simulate(args) -> int:
@@ -201,6 +214,7 @@ def cmd_serve(args) -> int:
     from kisht.api import create_api
 
     rt = build(args.config, audit_name="dashboard")
+    _sweeper(rt)
     print(f"Kisht dashboard: http://{args.host}:{args.port}")
     uvicorn.run(create_api(rt), host=args.host, port=args.port, log_level="warning")
     return 0

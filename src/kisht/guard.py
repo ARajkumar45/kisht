@@ -27,6 +27,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from kisht.audit import AuditLog
+from kisht.languages import date_words
 from kisht.ledger import PromiseLimit, SqliteLedger
 from kisht.lender import Lender
 from kisht.ports import CallState
@@ -173,7 +174,19 @@ class PolicyGuard:
         loan = self.ledger.loan(loan_id)
         dues = self.ledger.dues(loan_id, self.today())
         lo, hi = self._amount_limits(loan_id)
+        latest = self._latest_promise_date(loan_id)
+        # Dates in words, weekday included: the model got weekdays wrong when left to work
+        # them out or translate them ("14 November, Sunday" for a Saturday). They come in the
+        # call's language, ready to say.
+        lang = self.calls.get(call_id, "language", "en")
+        words = {"today": date_words(lang, self.today()),
+                 "latest_promise_date": date_words(lang, latest)}
+        if dues.next_due_date:
+            words["next_due_date"] = date_words(lang, dues.next_due_date)
+        if dues.oldest_unpaid_due:
+            words["overdue_since"] = date_words(lang, dues.oldest_unpaid_due)
         return {**dues.as_dict(), "product": loan["product"], "emi": loan["emi"],
+                "dates_in_words": words,
                 "open_promises": [{"amount": p["amount"], "date": p["promised_date"]}
                                   for p in self.ledger.open_promises(loan_id)],
                 "allowed_promise": {"min_amount": lo, "max_amount": hi,

@@ -34,6 +34,25 @@ def _redact(value: Any) -> Any:
     return value
 
 
+def entries_for_call(audit_dir: str | Path, call_id: str) -> list[dict[str, Any]]:
+    """A call's audit trail from the files on disk. Each process (chat, voice bridge,
+    simulator, dashboard) writes its own file, so one process's memory is never the whole
+    story."""
+    out: list[dict[str, Any]] = []
+    for path in sorted(Path(audit_dir).glob("*.jsonl")):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if call_id not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("call_id") == call_id:
+                    out.append(entry)
+    return sorted(out, key=lambda e: e["time"])
+
+
 class AuditLog:
     def __init__(self, path: str | Path | None = None):
         self.entries: list[dict[str, Any]] = []

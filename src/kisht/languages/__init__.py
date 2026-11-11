@@ -48,6 +48,8 @@ class LanguagePack:
     day_after: frozenset[str] = frozenset()
     weekdays: tuple[frozenset[str], ...] = ()  # Monday .. Sunday
     months: tuple[frozenset[str], ...] = ()    # January .. December
+    weekday_names: tuple[str, ...] = ()        # Monday .. Sunday, as code writes them
+    month_names: tuple[str, ...] = ()          # January .. December, as code writes them
     # judging the agent (regex fragments; Indic ones must not use \b)
     promise_saved: tuple[str, ...] = ()
     link_sent: tuple[str, ...] = ()
@@ -77,6 +79,16 @@ def pack(code: str) -> LanguagePack:
 def say(code: str, key: str, **kw) -> str:
     line = pack(code).say.get(key) or PACKS["en"].say[key]
     return line.format(**kw)
+
+
+def date_words(code: str, d) -> str:
+    """A date with its weekday, written in the language itself where the pack has the names
+    (Tamil, Telugu) and in English otherwise. The model copies this; it must not translate
+    or work out a weekday (it turned "Wednesday 11 November" into "Friday, September 11")."""
+    p = pack(code)
+    if len(p.weekday_names) == 7 and len(p.month_names) == 12:
+        return f"{p.weekday_names[d.weekday()]}, {d.day} {p.month_names[d.month - 1]} {d.year}"
+    return f"{d:%A} {d.day} {d:%B %Y}"
 
 
 def detect(text: str, allowed: list[str] | tuple[str, ...]) -> str | None:

@@ -1,5 +1,7 @@
 # Kisht — an EMI repayment agent for Indian lenders
 
+[![CI](https://github.com/ARajkumar45/kisht/actions/workflows/ci.yml/badge.svg)](https://github.com/ARajkumar45/kisht/actions/workflows/ci.yml)
+
 An AI agent that contacts borrowers about upcoming and missed EMIs, by **chat or voice**, in
 **Hindi, English, Tamil or Telugu** (including Hinglish, Tanglish and Tenglish), and gets to an outcome: pay now, a promise to pay within the
 lender's policy, or a hand-off to a human for hardship, disputes and waivers.
@@ -72,13 +74,17 @@ flowchart LR
   LLM --> MLX[Qwen3.5-9B on MLX\nlocal default]
   LLM -.-> Other[Ollama · vLLM · cloud API]
   Tools --> RAG[loan agreement\nBM25 retrieval]
+  Agent --> Insights[(call log · traces\nreviews · desk)]
+  Reviewer[reviewer\nQA + analytics] --> Insights
+  Reviewer --> LLM
+  Insights --> API[API] --> Dash[React dashboard\nsupervisor · human desk]
 ```
 
 Local-first, every outside piece behind a port chosen in `config.yaml`:
 
 | Port | Default (this Mac) | Swap in |
 |---|---|---|
-| LLM, per role (agent, planner, simulator) | Qwen3.5-9B on `mlx_lm.server` | Ollama, llama.cpp, vLLM, any OpenAI-compatible API |
+| LLM, per role (agent, planner, simulator, reviewer) | Qwen3.5-9B on `mlx_lm.server` | Ollama, llama.cpp, vLLM, any OpenAI-compatible API |
 | Speech (voice only) | Sarvam `saarika` / `bulbul` | other vendors via Bolna |
 | Channel | chat CLI; mic/web via Bolna | phone (Plivo/Twilio via Bolna), WhatsApp |
 | Store | SQLite ledger + Redis conversation state | Postgres |
@@ -162,6 +168,13 @@ cd dashboard && npm install && npm run build && cd ..
 uv run kisht serve                  # http://127.0.0.1:8000
 ```
 
+A conversation is wrapped up the same way whoever ended it: a case note for next time, the
+ledger contact closed, and the review. A phone call that simply goes quiet is picked up by a
+sweeper after a few minutes.
+
+The dashboard has no login. It is built for a local demo; put it behind authentication before
+exposing it to a network.
+
 Traces go to the dashboard's store. Set `tracing.otlp_endpoint` in `config.yaml` to send the
 same spans to Jaeger, Arize Phoenix or Grafana Tempo as well.
 
@@ -204,6 +217,10 @@ passed 39%. Reading the failures showed borrowers confirm a promise by repeating
 11 November ko 3000"), and the yes-check treated any date or number as a change request, so no
 promise was ever saved. After fixing that (D88) the same personas pass 63%, and 67% over the full
 suite. Both runs are in `results/evals/`.
+
+These numbers were measured before later fixes that also apply to Hindi and English (promise
+confirmation with a time of day, repeated tool calls, "I'll record it" without the tool,
+dates in words), so they are a floor, not the current score.
 
 **What still fails, and why:** a 9B local model under-uses `escalate_to_human` (disputes,
 waivers) and often answers fee questions from memory instead of calling `lookup_agreement`.
@@ -270,6 +287,10 @@ dashboard/   React + TypeScript contact-centre dashboard
 lenders/ knowledge/ evals/personas.yaml config.yaml
 docs/        decisions, research and measured results
 ```
+
+## Licence
+
+MIT. See `LICENSE`.
 
 ## History
 

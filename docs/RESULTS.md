@@ -55,6 +55,11 @@ Notes: the simulator is the same 9B model, so some failures are the borrower's f
 it is Priya, then says it is the neighbour; it ends the chat on turn 0). These are counted as
 failures, not removed.
 
+# Earlier phase: phone receptionist (M1 to M5)
+
+Measured on the receptionist that this repository started as. Kisht reuses the voice path,
+the prompt caching and the concurrency limits measured here.
+
 ## M5 — Voice through Bolna (2026-11-08/09)
 
 **Question (D25–D28, D60):** does the text brain work behind a real voice stack, and

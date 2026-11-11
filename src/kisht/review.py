@@ -52,7 +52,8 @@ only if the borrower said it; if they gave none, use "not_stated". Do not guess,
 fact"}}, ...one entry per scorecard item}}}}
 Use "na" only when the item does not apply (for example no promise was made).
 
-OUTCOME RECORDED BY THE SYSTEM: {outcome}
+FACTS RECORDED BY CODE (these are certain; your summary and scores must not contradict them):
+{facts}
 
 CONVERSATION (tools the agent used are in brackets):
 {conversation}
@@ -66,6 +67,29 @@ def _conversation(turns: list[dict]) -> str:
             lines.append(f"Borrower: {t['borrower']}")
         tools = f" [{', '.join(t['tools'])}]" if t.get("tools") else ""
         lines.append(f"Agent{tools}: {t['agent']}")
+    return "\n".join(lines)
+
+
+def facts(call: dict, turns: list[dict]) -> str:
+    """What code knows for sure about this call. The first live reviews contradicted the
+    record ("failed to verify identity" on a call where identity was verified), so the
+    reviewer is told the record up front."""
+    verified = next((i for i, t in enumerate(turns) if "verify_identity" in (t.get("tools") or [])
+                     and not {"identity_mismatch", "identity_locked"} & set(t.get("refused") or [])),
+                    None)
+    used = [x for t in turns for x in (t.get("tools") or [])]
+    blocked = [x for t in turns for x in (t.get("replaced") or []) + (t.get("refused") or [])]
+    lines = [f"- Outcome: {call.get('outcome') or 'unknown'}.",
+             (f"- Identity WAS verified, in borrower turn {verified}. Code blocks every loan "
+              "detail before that point, so none was shared earlier." if verified is not None
+              else "- Identity was never verified, so code shared no loan detail at all."),
+             f"- Tools the agent used, in order: {', '.join(used) or 'none'}.",
+             ("- A promise to pay was saved." if "promise" in (call.get("outcome") or "")
+              else "- No promise to pay was saved."),
+             ("- A payment link was sent." if "send_payment_link" in used
+              else "- No payment link was sent."),
+             (f"- Code blocked or replaced before the borrower heard it: {', '.join(blocked)}."
+              if blocked else "- Code blocked nothing.")]
     return "\n".join(lines)
 
 
@@ -102,6 +126,7 @@ class Reviewer:
         call = self.store.call(call_id)
         turns = self.store.turns(call_id)
         started = time.perf_counter()
+        self.store.delete_spans(call_id, "review")           # a re-review replaces the old one
         with call_span(call_id, "review", gen_ai__request__model=self.model.name) as span:
             data = self._ask(lender, call, turns)
             review = self._score(lender, data, turns)
@@ -116,7 +141,7 @@ class Reviewer:
         prompt = PROMPT.format(
             items="\n".join(f"- {q.id}: {q.check}" for q in lender.qa_scorecard),
             reasons=json.dumps(REASONS), sentiments=json.dumps(SENTIMENTS),
-            outcome=call.get("outcome") or "unknown", conversation=_conversation(turns))
+            facts=facts(call, turns), conversation=_conversation(turns))
         messages = [{"role": "user", "content": prompt}]
         for _ in range(2):
             try:

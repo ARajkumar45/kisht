@@ -33,6 +33,7 @@ from kisht.knowledge import Agreement
 from kisht.languages import say
 from kisht.lender import ConfigError, LenderRegistry
 from kisht.ports import ChatModel
+from kisht.wrapup import finish_in_background
 
 RUN_TTL = 24 * 60 * 60
 CHUNK_CHARS = 40
@@ -43,9 +44,11 @@ class VoiceBridge:
     def __init__(self, *, lenders: LenderRegistry, guards: dict[str, PolicyGuard],
                  calls: RedisCallState, model: ChatModel,
                  agreements: dict[str, Agreement] | None = None,
-                 insights: InsightsStore | None = None):
+                 insights: InsightsStore | None = None,
+                 reviewer_model: ChatModel | None = None):
         self.lenders = lenders
         self.insights = insights
+        self.reviewer_model = reviewer_model
         self.guards = guards
         self.calls = calls
         self.model = model
@@ -97,7 +100,8 @@ class VoiceBridge:
             return TurnResult(reply=refusal or "", ended="refused"), None
         result = agent.handle(text)
         if result.ended:
-            agent.finish()
+            # In the background: the caller hears the last reply now, not after the case note.
+            finish_in_background(agent, self.reviewer_model)
         agent.guard.audit.record(call_id=agent.call_id, tenant_id=agent.lender.id,
                                  action="voice_turn", outcome="ok",
                                  args={"run_id": run_id, "new_call": new, "tools": result.tool_calls,

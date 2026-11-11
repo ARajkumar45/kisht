@@ -27,8 +27,8 @@ from kisht.guard import GuardRefused
 from kisht.languages import pack
 from kisht.planner import PRIORITIES, PlanItem, Planner
 from kisht.ports import ModelUnavailable
-from kisht.review import Reviewer
 from kisht.runtime import Runtime
+from kisht.wrapup import finish_and_review
 
 SIMULATOR = """\
 You are role-playing a borrower who is being contacted by their loan company. Stay in \
@@ -120,9 +120,9 @@ def run_call(rt: Runtime, lender_id: str, borrower_id: str, loan_id: str, channe
         t = agent.handle(said)
         if t.fallback or t.ended:
             break
-    done = agent.finish()
-    review = Reviewer(rt.models.for_role("reviewer"), rt.insights).review(
-        agent.call_id, guard.lender)
+    finish_and_review(agent, rt.models.for_role("reviewer"))
+    done = rt.insights.call(agent.call_id)
+    review = rt.insights.review(agent.call_id) or {"qa_score": None, "reason": "unknown"}
     return {"loan_id": loan_id, "call_id": agent.call_id, "situation": situation.id,
             "outcome": done["outcome"], "qa_score": review["qa_score"],
             "reason": review["reason"]}
