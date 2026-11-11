@@ -135,11 +135,29 @@ React + TypeScript dashboard (`dashboard/`) served by `kisht serve`:
 | Agent assist | For a human picking up a case: an AI brief, next best action, suggested replies in the borrower's language, and answers from the loan agreement with section numbers. |
 | Test chat | A phone-style chat window to be the borrower against the real agent. |
 
+![Overview: 25 simulated conversations in Hindi, Tamil, English and Telugu](docs/img/overview.jpg)
+
+A call with its post-call QA review, and its trace. The red "Reply check" is where the model
+claimed the promise was saved before the borrower agreed; code replaced it with the read-back.
+
+![Call detail with QA review](docs/img/call-review.jpg)
+![Call trace](docs/img/trace.jpg)
+
+The same agent in Tamil, and the human desk with agent assist on a hardship hand-off:
+
+![Tamil conversation](docs/img/call-tamil.jpg)
+![Human desk with agent assist](docs/img/desk.jpg)
+
+The planner's queue for the day, with its reasons and what each contact led to:
+
+![Today's plan](docs/img/plan.jpg)
+
 To fill it with a realistic day without contacting anyone, `kisht simulate` runs the planner and
 then simulated borrowers with hidden situations against the real agent, guard and ledger:
 
 ```bash
 uv run kisht simulate --n 20        # plan today, 20 simulated conversations, each reviewed
+uv run kisht review                 # review any call not yet reviewed (--all: review again)
 cd dashboard && npm install && npm run build && cd ..
 uv run kisht serve                  # http://127.0.0.1:8000
 ```

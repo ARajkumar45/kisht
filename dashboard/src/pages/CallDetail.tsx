@@ -53,7 +53,7 @@ export default function CallDetail() {
           </Card>
         </div>
       </div>
-      <Card title="Trace" right={<span className="muted small">OpenTelemetry spans · {spans.length} steps · click one</span>}>
+      <Card title="Trace" right={<span className="muted small">OpenTelemetry spans · {spans.length} steps · idle gaps shortened · click one</span>}>
         <Trace spans={spans} />
       </Card>
     </Page>
@@ -105,9 +105,21 @@ const SPAN_LABEL: Record<string, string> = {
 function Trace({ spans }: { spans: Span[] }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!spans.length) return <div className="muted">No trace recorded.</div>;
-  const t0 = Math.min(...spans.map((s) => s.start_ns));
-  const t1 = Math.max(...spans.map((s) => s.end_ns));
-  const total = Math.max(t1 - t0, 1);
+  // Idle time between steps (the borrower typing, a review run hours later) would squash every
+  // step to a sliver, so any gap longer than GAP_NS is drawn as GAP_NS.
+  const GAP_NS = 1.5e9;
+  const shift = new Map<string, number>();
+  let cut = 0;
+  let end = -Infinity;
+  for (const s of [...spans].sort((a, b) => a.start_ns - b.start_ns)) {
+    const start = s.start_ns - cut;
+    if (end !== -Infinity && start - end > GAP_NS) cut += start - end - GAP_NS;
+    shift.set(s.span_id, cut);
+    end = Math.max(end, s.end_ns - cut);
+  }
+  const at = (s: Span) => s.start_ns - (shift.get(s.span_id) ?? 0);
+  const t0 = Math.min(...spans.map(at));
+  const total = Math.max(end - t0, 1);
   const byId = new Map(spans.map((s) => [s.span_id, s]));
   const depth = (s: Span): number => (s.parent_id && byId.has(s.parent_id) ? 1 + depth(byId.get(s.parent_id)!) : 0);
   return (
@@ -122,7 +134,7 @@ function Trace({ spans }: { spans: Span[] }) {
             <div className={`span-row ${s.name} ${bad ? "bad" : ""}`} onClick={() => setOpen(open === s.span_id ? null : s.span_id)}>
               <div className="span-name" style={{ paddingLeft: d * 16 }}>{label}</div>
               <div className="span-track">
-                <div className="span-bar" style={{ left: `${(100 * (s.start_ns - t0)) / total}%`, width: `max(2px, ${(100 * (s.end_ns - s.start_ns)) / total}%)` }} />
+                <div className="span-bar" style={{ left: `${(100 * (at(s) - t0)) / total}%`, width: `max(2px, ${(100 * (s.end_ns - s.start_ns)) / total}%)` }} />
               </div>
               <div className="span-ms">{ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms.toFixed(0)} ms`}</div>
             </div>
