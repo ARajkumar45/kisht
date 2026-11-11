@@ -28,6 +28,7 @@ from kisht.audit import AuditLog
 from kisht.confirm import leaks_account
 from kisht.guard import PolicyGuard
 from kisht.knowledge import Agreement
+from kisht.languages import pack
 from kisht.ledger import SqliteLedger
 from kisht.lender import Lender
 from kisht.ports import CallState, ChatModel, ModelUnavailable
@@ -54,9 +55,6 @@ borrower and your situation does not say otherwise).
 - Follow your situation and goal; do not invent new problems.
 - As soon as your goal is reached or the agent says goodbye, reply with exactly {end}.
 """
-LANG_STYLE = {"hi": "Hinglish (Hindi in Latin letters, mixed with English), as most people "
-                    "in north India chat.",
-              "en": "simple Indian English."}
 
 
 @dataclass
@@ -140,7 +138,7 @@ def simulate(persona: Persona, *, lender: Lender, agent_model: ChatModel,
         who = (f"NOT the borrower {name}. You do not know {name.split()[0]}'s date of birth or "
                "PIN code and must not make them up (unless your situation gives you wrong "
                "ones to try).")
-    system = SIMULATOR.format(who=who, language=LANG_STYLE[persona.language],
+    system = SIMULATOR.format(who=who, language=pack(persona.language).simulator_style,
                               persona=persona.persona, end=END)
     turns, error, ended_by = [], None, "max_turns"
     for _ in range(MAX_TURNS):

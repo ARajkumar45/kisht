@@ -14,11 +14,10 @@ One borrower turn:
 """
 from __future__ import annotations
 
-from datetime import date
-
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from kisht.confirm import (
@@ -26,11 +25,14 @@ from kisht.confirm import (
     claims_payment_received,
     claims_promise_saved,
     claims_waiver,
+    is_stall,
     is_yes_to_promise,
     leaks_account,
 )
 from kisht.guard import GuardRefused, PolicyGuard
 from kisht.knowledge import Agreement
+from kisht.languages import detect
+from kisht.languages import say as pack_say
 from kisht.ports import CallState, ChatModel, ModelUnavailable
 from kisht.prompt import GREETING, build_messages
 from kisht.tools import TOOL_SCHEMAS, ToolRunner
@@ -38,13 +40,6 @@ from kisht.tools import TOOL_SCHEMAS, ToolRunner
 MAX_TOOL_ROUNDS = 6
 ENDING_ACTIONS = {"opt_out", "escalate_to_human"}
 
-_STALL = re.compile(r"let me (check|see|look)|one moment|please hold|hold on|"
-                    r"check kar(te|ti|ta) (hain|hoon|hun)|check kar rah(a|i|e)|"
-                    r"dekh rah(a|i|e) (hoon|hun|hain)|ek (minute|second)|\.\.\.\s*$",
-                    re.IGNORECASE)
-_HINDI = {"hai", "hain", "kya", "kal", "parso", "aaj", "mujhe", "nahi", "nahin", "haan", "ji",
-          "kitna", "mera", "meri", "aap", "theek", "paisa", "paise", "karunga", "karungi",
-          "kar", "dunga", "dungi", "abhi", "salary", "tankhwah"}
 
 NOTE = {"role": "user", "content": (
     "[System note, not from the borrower] Do not answer from memory and do not say 'let me "
@@ -58,49 +53,12 @@ UNCHECKED_ID = {"role": "user", "content": (
     "[System note, not from the borrower] The borrower just gave a date of birth or PIN code, "
     "but you did not call verify_identity. Only the tool can say whether it matches: call it "
     "now with what they said, then reply from its result.")}
-_ID_DETAIL = re.compile(r"\b\d{6}\b|\b\d{1,2}[ ./-]?(st|nd|rd|th)?[ ./-]?"
-                        r"([a-z]{3,9}|\d{1,2})[ ,./-]+(19|20)\d{2}\b", re.IGNORECASE)
+_ID_DETAIL = re.compile(r"\b\d{6}\b|\b(19[4-9]\d|200\d)\b")   # a PIN, or a birth year
 AFTER_PROMISE = {"role": "user", "content": (
     "[System note, not from the borrower] The promise is saved and the borrower has heard "
     "that. Schedule a follow-up for the day after the promised date with schedule_followup, "
     "then close the conversation warmly in one or two sentences.")}
 
-SAY = {
-    "promise_saved": {
-        "en": "Thank you, noted: {read_back}.",
-        "hi": "Dhanyavaad, note kar liya: {read_back}.",
-    },
-    "read_back": {
-        "en": "So you will pay {read_back}. Is that right?",
-        "hi": "Confirm kar doon: {read_back}. Sahi hai?",
-    },
-    "fallback": {
-        "en": "Sorry, I'm having a technical problem. Our team will contact you. Thank you.",
-        "hi": "Maaf kijiye, abhi technical dikkat hai. Hamari team aapse sampark karegi. "
-              "Dhanyavaad.",
-    },
-    "stuck": {
-        "en": "Sorry, I couldn't sort that out. Shall I ask our team to call you?",
-        "hi": "Maaf kijiye, main yeh nahi kar paayi. Kya main team se aapko call karwaun?",
-    },
-    "verify_first": {
-        "en": "Before I can discuss any details, may I have your date of birth or PIN code?",
-        "hi": "Kuch bhi details batane se pehle, kya aap apni date of birth ya PIN code bata "
-              "sakte hain?",
-    },
-    "cannot_decide": {
-        "en": "I can't decide that myself, but I can pass it to our team with your details. "
-              "Shall I do that?",
-        "hi": "Yeh main khud decide nahi kar sakti, lekin aapki baat team tak pahuncha sakti "
-              "hoon. Kar doon?",
-    },
-    "polite": {
-        "en": "I'm sorry if that came out wrong. I'm here to help you find a way that works "
-              "for you.",
-        "hi": "Maaf kijiye agar baat galat lagi. Main aapki madad ke liye hoon, aap jaisa "
-              "aasaan ho.",
-    },
-}
 
 
 @dataclass
@@ -153,8 +111,7 @@ class Agent:
         return self.calls.get(self.call_id, "language", self.lender.languages.default)
 
     def say(self, key: str, **kw: Any) -> str:
-        lines = SAY[key]
-        return lines.get(self.language, lines["en"]).format(**kw)
+        return pack_say(self.language, key, **kw)
 
     # ---------- one turn ----------
 
@@ -168,7 +125,7 @@ class Agent:
         prefix = ""
         if pending and is_yes_to_promise(text, pending["amount"],
                                          date.fromisoformat(pending["pay_date"]),
-                                         self.guard.today()):
+                                         self.guard.today(), self.language):
             prefix = self._save_promise(pending, result)
             if result.promise_saved:
                 extra = [AFTER_PROMISE]
@@ -229,7 +186,7 @@ class Agent:
 
     def _needs_retry(self, text: str, result: TurnResult) -> dict | None:
         """A reply that promises an action the model has not taken gets one more try."""
-        if _STALL.search(text):
+        if is_stall(text):
             self._log("stall_retry", {"reply": text[:300]}, "error")
             return NOTE
         if (not self.calls.get(self.call_id, "identity_verified", False)
@@ -338,13 +295,9 @@ class Agent:
         return reply
 
     def _follow_language(self, text: str) -> None:
-        if "hi" not in self.lender.languages.allowed:
-            return
-        words = set(re.findall(r"[a-z]+", text.lower()))
-        if re.search(r"[ऀ-ॿ]", text) or len(words & _HINDI) >= 2:
-            self.calls.set_state(self.call_id, language="hi")
-        elif len(words) >= 4 and not words & _HINDI:
-            self.calls.set_state(self.call_id, language="en")
+        lang = detect(text, self.lender.languages.allowed)
+        if lang:
+            self.calls.set_state(self.call_id, language=lang)
 
     def _log(self, action: str, args: dict, outcome: str) -> None:
         self.guard.audit.record(call_id=self.call_id, tenant_id=self.lender.id, action=action,

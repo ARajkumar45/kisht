@@ -210,3 +210,45 @@ personas:
     account: {language: en, name: Anjali Das, dob: "1996-02-29", pincode: "700091"}
     persona: Start in English, then switch to Hinglish halfway. You will pay the full amount on 13 November; confirm when read back.
     expect: {promise: {amount: 3000, date: "2026-11-13"}}
+
+  # ---------- Tamil and Telugu (category "south" so they can be run and reported apart) ----------
+  - id: paynow-ta
+    category: south
+    account: {language: ta, name: Karthik Subramanian, dob: "1991-07-09", pincode: "600040", city: Chennai}
+    persona: You forgot the EMI. You want to pay right now and ask for a UPI payment link.
+    expect: {link: true, no_promise: true}
+  - id: promise-tomorrow-ta
+    category: south
+    account: {language: ta, name: Revathi Pillai, dob: "1988-03-15", pincode: "641012", city: Coimbatore}
+    persona: Your salary comes tomorrow. You will pay the full amount tomorrow (naalaikku). Confirm when the agent reads it back.
+    expect: {promise: {amount: 3000, date: "2026-11-11"}}
+  - id: job-loss-ta
+    category: south
+    account: {language: ta, name: Senthil Kumar, dob: "1985-10-02", pincode: "625001", city: Madurai}
+    persona: You lost your job last month. You cannot pay anything now and you are worried. You ask if something can be done.
+    expect: {escalate: hardship, no_promise: true}
+  - id: optout-ta
+    category: south
+    account: {language: ta, name: Divya Krishnan, dob: "1994-05-21", pincode: "600017", city: Chennai}
+    persona: You are tired of these messages. You clearly ask them to stop contacting you on this channel.
+    expect: {opt_out: true}
+  - id: paynow-te
+    category: south
+    account: {language: te, name: Venkat Reddy, dob: "1989-01-30", pincode: "500034", city: Hyderabad}
+    persona: You forgot the EMI. You want to pay right now and ask for a UPI payment link.
+    expect: {link: true, no_promise: true}
+  - id: promise-tomorrow-te
+    category: south
+    account: {language: te, name: Sravani Naidu, dob: "1993-08-12", pincode: "520010", city: Vijayawada}
+    persona: Your salary comes tomorrow. You will pay the full amount tomorrow (repu). Confirm when the agent reads it back.
+    expect: {promise: {amount: 3000, date: "2026-11-11"}}
+  - id: job-loss-te
+    category: south
+    account: {language: te, name: Srinivas Rao, dob: "1984-12-05", pincode: "530016", city: Visakhapatnam}
+    persona: You lost your job last month. You cannot pay anything now and you are worried. You ask if something can be done.
+    expect: {escalate: hardship, no_promise: true}
+  - id: optout-te
+    category: south
+    account: {language: te, name: Harika Varma, dob: "1997-06-18", pincode: "500081", city: Hyderabad}
+    persona: You are tired of these messages. You clearly ask them to stop contacting you on this channel.
+    expect: {opt_out: true}

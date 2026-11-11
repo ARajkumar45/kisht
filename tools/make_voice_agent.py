@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from kisht.config import load_config
+from kisht.languages import pack
 from kisht.ledger import SqliteLedger
 from kisht.lender import LenderRegistry
 from kisht.prompt import GREETING
@@ -30,7 +31,10 @@ def config_for(lender, borrower: dict, bridge_url: str, speech) -> dict:
     greeting = GREETING[lang].format(agent=lender.agent_name,
                                      lender=lender.name.split(" (")[0].replace(" Ltd", ""),
                                      first_name=borrower["name"].split()[0])
-    sarvam_lang = "hi-IN" if lang == "hi" else "en-IN"
+    sarvam_lang = pack(lang).sarvam
+    # Hindi callers mix in English, which Sarvam's en-IN mode transcribes best (D84); Tamil
+    # and Telugu need their own language code to be recognised at all.
+    stt_lang = "en-IN" if lang in ("en", "hi") else sarvam_lang
     return {"agent_config": {
         "agent_name": f"Kisht {lender.id} -> {borrower['id']} (mic)",
         "agent_type": "other",
@@ -41,7 +45,7 @@ def config_for(lender, borrower: dict, bridge_url: str, speech) -> dict:
                        "input": {"provider": "default", "format": "pcm"},
                        "output": {"provider": "default", "format": "pcm"},
                        "transcriber": {"provider": "sarvam", "model": speech.stt_model,
-                                       "language": "en-IN", "stream": True,
+                                       "language": stt_lang, "stream": True,
                                        "encoding": "linear16", "endpointing": 400,
                                        "high_vad_sensitivity": False},
                        "llm_agent": {"agent_type": "simple_llm_agent",

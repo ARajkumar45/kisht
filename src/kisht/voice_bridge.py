@@ -29,14 +29,13 @@ from kisht.adapters.llm import health_check
 from kisht.agent import Agent, TurnResult
 from kisht.guard import GuardRefused, PolicyGuard
 from kisht.knowledge import Agreement
+from kisht.languages import say
 from kisht.lender import ConfigError, LenderRegistry
 from kisht.ports import ChatModel
 
 RUN_TTL = 24 * 60 * 60
 CHUNK_CHARS = 40
 DEFAULT_RUN = "unpatched-default"
-NOT_NOW = {"en": "Sorry, we cannot discuss this right now. Thank you, goodbye.",
-           "hi": "Maaf kijiye, abhi baat nahi ho sakti. Dhanyavaad."}
 
 
 class VoiceBridge:
@@ -83,7 +82,7 @@ class VoiceBridge:
             guard.audit.record(call_id=None, tenant_id=lender_id, action="voice_refused",
                                args={"run_id": run_id}, outcome="denied",
                                detail=f"{e.code}: {e.message}")
-            return None, True, NOT_NOW.get(lang, NOT_NOW["en"])
+            return None, True, say(lang, "not_now")
         self.calls.r.set(key, agent.call_id, ex=RUN_TTL)
         return agent, True, None
 

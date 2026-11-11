@@ -4,7 +4,7 @@ name: Demo Finance Ltd (fictional NBFC)
 agent_name: Asha
 agent_gender: female        # Hindi verb forms differ by gender
 timezone: Asia/Kolkata
-languages: {allowed: [en, hi], default: hi}
+languages: {allowed: [en, hi, ta, te], default: hi}
 
 contact:
   window: {start: "08:00", end: "19:00"}   # RBI recovery-agent rules: no calls before 8 am / after 7 pm

@@ -32,7 +32,7 @@ def edited(tmp_path, **changes):
 
 
 @pytest.mark.parametrize("change", [
-    {"languages__default": "ta"},                       # default not allowed
+    {"languages__default": "kn"},                       # default not allowed
     {"contact__window": {"start": "19:00", "end": "08:00"}},
     {"promises__min_part_payment_pct": 0},
     {"needs_human": ["free_money"]},

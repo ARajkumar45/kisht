@@ -16,14 +16,16 @@ def main() -> int:
     p.add_argument("--lender", default="demo-nbfc")
     p.add_argument("-n", type=int, default=200)
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--south", type=int, default=40, help="extra Tamil/Telugu-region borrowers")
     p.add_argument("--db", default=None, help="default: stores.ledger_db from the config")
     p.add_argument("--config", default="config.yaml")
     a = p.parse_args()
     db = Path(a.db or load_config(a.config).stores.ledger_db)
     if db.exists():
         db.unlink()                                  # always rebuilt from the seed
-    counts = generate(SqliteLedger(db), lender_id=a.lender, today=a.today, n=a.n, seed=a.seed)
-    print(f"{db}: {a.n} borrowers as of {a.today} -> {dict(counts)}")
+    counts = generate(SqliteLedger(db), lender_id=a.lender, today=a.today, n=a.n, seed=a.seed,
+                      south=a.south)
+    print(f"{db}: {a.n + a.south} borrowers as of {a.today} -> {dict(counts)}")
     return 0
 
 

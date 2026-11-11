@@ -15,7 +15,8 @@ def test_pass_hat_k_matches_tau_bench():
 
 def test_persona_file_is_valid():
     personas = load_personas("evals/personas.yaml")
-    assert len(personas) == 40
+    assert len(personas) == 48                       # 40 core + 8 Tamil/Telugu
+    assert len({p.id for p in personas}) == len(personas)
     assert all(p.expect for p in personas)
 
 
