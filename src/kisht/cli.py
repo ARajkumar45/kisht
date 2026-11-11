@@ -182,6 +182,19 @@ def cmd_simulate(args) -> int:
     return 0
 
 
+def cmd_review(args) -> int:
+    from kisht.review import Reviewer
+
+    rt = build(args.config, audit_name="review")
+    ids = ([c["call_id"] for c in rt.insights.calls(status="ended", limit=100_000)]
+           if args.all else rt.insights.unreviewed())
+    reviewer = Reviewer(rt.models.for_role("reviewer"), rt.insights)
+    for i, call_id in enumerate(ids, 1):
+        r = reviewer.review(call_id, rt.lenders.get(rt.insights.call(call_id)["lender_id"]))
+        print(f"{i}/{len(ids)} {call_id[:8]} {r['reason']:16} QA {r['qa_score']}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
@@ -215,12 +228,15 @@ def main(argv=None) -> int:
     sm.add_argument("--workers", type=int, default=2)
     sm.add_argument("--replan", action="store_true", help="plan again even if today has a plan")
     sm.add_argument("--at", help="fixed clock, e.g. 2026-11-11T10:00:00+05:30")
+    rv = sub.add_parser("review", help="post-call QA review for calls not yet reviewed")
+    rv.add_argument("--all", action="store_true", help="review every ended call again")
     sv = sub.add_parser("serve", help="dashboard + API")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
     args = p.parse_args(argv)
     return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat, "plan": cmd_plan,
-            "bridge": cmd_bridge, "simulate": cmd_simulate, "serve": cmd_serve}[args.cmd](args)
+            "bridge": cmd_bridge, "simulate": cmd_simulate, "review": cmd_review,
+            "serve": cmd_serve}[args.cmd](args)
 
 
 if __name__ == "__main__":

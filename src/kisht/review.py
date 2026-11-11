@@ -23,7 +23,7 @@ from kisht.tracing import call_span, set_attrs
 
 REASONS = ["salary_delay", "job_loss", "medical", "family_emergency", "business_loss",
            "forgot", "dispute", "already_paid", "wants_waiver", "wrong_person",
-           "refused_to_engage", "no_issue", "other"]
+           "refused_to_engage", "no_issue", "not_stated", "other"]
 SENTIMENTS = ["positive", "neutral", "negative", "distressed"]
 
 # Code-side compliance: which blocked actions count under which rule.
@@ -44,7 +44,8 @@ SCORECARD (judge each item):
 {items}
 
 Answer with ONLY a JSON object, no other text:
-{{"reason": one of {reasons},
+{{"reason": one of {reasons}: the reason the BORROWER gave for not paying. Use a reason \
+only if the borrower said it; if they gave none, use "not_stated". Do not guess,
  "sentiment": one of {sentiments} (the borrower's mood at the end),
  "summary": one sentence in English: situation and outcome,
  "qa": {{"<item id>": {{"result": "pass" | "fail" | "na", "evidence": "a short quote or \

@@ -5,7 +5,7 @@ const REASONS: Record<string, string> = {
   salary_delay: "Salary late", job_loss: "Job loss", medical: "Medical", family_emergency: "Family emergency",
   business_loss: "Business loss", forgot: "Forgot", dispute: "Dispute", already_paid: "Says already paid",
   wants_waiver: "Wants waiver", wrong_person: "Wrong person", refused_to_engage: "Refused to engage",
-  no_issue: "No issue", other: "Other", unknown: "Not reviewed",
+  no_issue: "No issue", not_stated: "Not stated", other: "Other", unknown: "Not reviewed",
 };
 
 export default function Overview() {
