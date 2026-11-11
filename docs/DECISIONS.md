@@ -127,6 +127,11 @@ To change a decision: edit its line, add the date and the reason.
 
 - D93. Three fixes found by the Tamil/Telugu runs, all general: time-of-day words do not block a yes to a date-only promise; identical tool calls repeated within one turn stop the loop (code reads back a pending promise instead); "I'll record it" without the tool counts as a stall and gets one retry. Promise personas went from 1/4 to 4/4.
 
+- D94. Contact-centre data lives in its own store (insights.sqlite), not the ledger: the ledger is the lender's book of money and promises; the call log, traces, reviews and desk state are the contact centre's. Both are written as things happen, so live views need no extra plumbing.
+- D95. Tracing uses OpenTelemetry with GenAI attribute names, exported to our own store for the dashboard and optionally over OTLP. All turns of a call share a trace id derived from the call id, so a conversation is one trace even across separate voice requests. Borrower text stays out of span attributes (it is in the turn log); spans carry timings, tokens, tool names and guard outcomes.
+- D96. Post-call QA: the model judges what needs judgement on the lender's scorecard; anything code knows for sure is filled in by code (identity before details is enforced by the guard, so it cannot fail), and compliance counts come from the guard's blocks, never from the model.
+- D97. Dashboard in React + TypeScript with no chart library (CSS bars), built by Vite and served by the same FastAPI process; Docker builds it in a Node stage.
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?

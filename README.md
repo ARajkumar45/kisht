@@ -117,6 +117,36 @@ Hand-off on job loss is still weak, the same limit seen in Hindi.
 One trap worth knowing: Python's `\w` and `\b` split Tamil and Telugu words at vowel signs, so
 every word match here uses Indic-safe boundaries.
 
+## Contact centre (CCAI)
+
+The agent is one part of a contact-centre AI product. Kisht also has the parts around it, in a
+React + TypeScript dashboard (`dashboard/`) served by `kisht serve`:
+
+| Part | What it does here |
+|---|---|
+| Today's plan | The planner agent's queue for the day: who, which channel, and why in its own words, plus what each contact led to. |
+| Call log | Every conversation, searchable, filterable by outcome, language, and "code blocked something". |
+| Call trace | Each call as an OpenTelemetry trace: every turn, model call (tokens, cache, queue wait), tool call and reply check, with timings. Blocked steps show in red. |
+| Post-call QA | Every call is scored on the lender's QA scorecard by a reviewer model, with evidence. Contact centres usually score about 2% of calls by hand. |
+| Analytics | Why borrowers are not paying, their mood, outcomes, right-person contact rate, promise and link rates, money promised. |
+| Compliance | Counted by code, not judged by a model: threats, leaks before identity, false claims and out-of-policy actions the guard stopped. |
+| Live view | Supervisor screen: conversations in progress and a feed of alerts. |
+| Human desk | Hand-offs routed to teams (hardship, disputes, collections manager) by rules in the lender YAML; take, resolve, all audited. |
+| Agent assist | For a human picking up a case: an AI brief, next best action, suggested replies in the borrower's language, and answers from the loan agreement with section numbers. |
+| Test chat | A phone-style chat window to be the borrower against the real agent. |
+
+To fill it with a realistic day without contacting anyone, `kisht simulate` runs the planner and
+then simulated borrowers with hidden situations against the real agent, guard and ledger:
+
+```bash
+uv run kisht simulate --n 20        # plan today, 20 simulated conversations, each reviewed
+cd dashboard && npm install && npm run build && cd ..
+uv run kisht serve                  # http://127.0.0.1:8000
+```
+
+Traces go to the dashboard's store. Set `tracing.otlp_endpoint` in `config.yaml` to send the
+same spans to Jaeger, Arize Phoenix or Grafana Tempo as well.
+
 ## Evaluation
 
 Full run, everything local: Qwen3.5-9B (4-bit, MLX) as both agent and simulated borrower,
@@ -196,7 +226,7 @@ the payment link and the follow-up in the ledger.
 
 ```bash
 mlx_lm.server --model mlx-community/Qwen3.5-9B-4bit --port 8080   # on the host
-docker compose up -d --build                                       # bridge on :5050
+docker compose up -d --build                         # bridge on :5050, dashboard on :8000
 docker compose exec kisht ./docker-entrypoint.sh health
 docker compose run --rm kisht chat --borrower br_0009
 ```
@@ -213,7 +243,12 @@ src/kisht/   ports.py adapters/ config.py   interfaces and swappable adapters
              guard.py tools.py               policy guard and the tools the model can use
              ledger.py loanbook.py           loan book and synthetic data
              knowledge.py                    BM25 retrieval over the loan agreement
+             languages/                      one module per language (en, hi, ta, te)
+             insights.py tracing.py          call log, OpenTelemetry traces, desk state
+             review.py simulate_day.py       post-call QA + analytics; simulated day
+             api.py runtime.py               dashboard API; one builder for every process
              evals.py voice_bridge.py cli.py
+dashboard/   React + TypeScript contact-centre dashboard
 lenders/ knowledge/ evals/personas.yaml config.yaml
 docs/        decisions, research and measured results
 ```

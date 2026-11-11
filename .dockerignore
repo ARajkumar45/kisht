@@ -3,6 +3,9 @@
 .logs
 data
 audit
-results
+results/*
+!results/evals
+dashboard/node_modules
+dashboard/dist
 **/__pycache__
 .env

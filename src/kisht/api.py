@@ -18,6 +18,7 @@ system and a human desk action is as audited as an agent action.
 from __future__ import annotations
 
 import json
+import os
 import re
 import statistics
 import threading
@@ -36,7 +37,9 @@ from kisht.guard import GuardRefused
 from kisht.review import Reviewer
 from kisht.runtime import Runtime
 
-ROOT = Path(__file__).resolve().parents[2]
+# Run from the repo root (like every kisht command: config.yaml is relative). In Docker the
+# package lives in the venv, so paths come from the working directory, not from __file__.
+ROOT = Path(os.environ.get("KISHT_ROOT", "."))
 DIST = ROOT / "dashboard" / "dist"
 
 

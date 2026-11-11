@@ -1,4 +1,5 @@
-# docker compose up --build        -> Redis + the Kisht voice bridge on :5050
+# docker compose up --build        -> Redis + the voice bridge on :5050 + the dashboard on :8000
+# docker compose run --rm kisht simulate --n 10   -> plan the day and run 10 simulated calls
 # docker compose run --rm kisht chat --borrower br_0009    -> chat with the agent
 # The model server runs on the host (see config.docker.yaml).
 services:
@@ -15,6 +16,15 @@ services:
       - ./audit:/app/audit
     stdin_open: true
     tty: true
+  dashboard:                               # contact-centre dashboard + API, same image and data
+    build: .
+    depends_on: [redis, kisht]
+    command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["8000:8000"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./data:/app/data
+      - ./audit:/app/audit
   ollama:                                  # optional model server for machines without MLX
     image: ollama/ollama:latest
     profiles: [ollama]
