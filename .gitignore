@@ -8,3 +8,5 @@ __pycache__/
 data/*.sqlite
 audit/*.jsonl
 results/voice_probe/
+*.sqlite-wal
+*.sqlite-shm
