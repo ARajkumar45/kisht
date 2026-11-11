@@ -161,7 +161,12 @@ class Agent:
         except ModelUnavailable as e:
             self._log("model_unavailable", {"error": str(e)[:300]}, "error")
             reply, result.fallback = self.say("fallback"), True
-        reply = (prefix + " " + reply).strip() if prefix else reply
+        if prefix and (result.replaced or result.fallback):
+            # The promise is saved and confirmed; a blocked or failed closing line would only
+            # confuse ("noted ... sorry, I couldn't do that"). Seen in the simulated day.
+            reply = prefix
+        else:
+            reply = (prefix + " " + reply).strip() if prefix else reply
         result.reply = reply
         result.model_latency_s = time.perf_counter() - started
         self.calls.append(self.call_id, {"role": "assistant", "content": reply})

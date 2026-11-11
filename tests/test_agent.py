@@ -257,3 +257,18 @@ def test_repeated_identical_tool_calls_stop_and_read_back(guard, calls, account)
     turn = agent.handle("Kal 3000 de dungi")
     assert turn.tool_calls == ["record_promise_to_pay"] and turn.model_calls == 2
     assert "Rs 3000" in turn.reply and turn.reply.endswith(("Is that right?", "Sahi hai?"))
+
+
+def test_a_blocked_closing_line_after_a_saved_promise_leaves_just_the_confirmation(
+        guard, calls, account, ledger):
+    # Seen in the simulated day: "noted: Rs 5350 ... Sorry, I couldn't sort that out."
+    model = FakeModel(
+        tool("verify_identity", pincode="560038"), tool("get_dues"), text("Kab tak?"),
+        tool("record_promise_to_pay", amount=3000, pay_date="2026-11-14"), text("Sahi hai?"),
+        text("Payment link bhej diya hai."), text("Payment link bhej diya hai."))
+    agent, _ = start(guard, calls, account, model)
+    agent.handle("Haan, PIN 560038")
+    agent.handle("14 ko kar dunga")
+    t = agent.handle("haan ji")
+    assert t.promise_saved and "unbacked_link_claim" in t.replaced
+    assert t.reply == "Dhanyavaad, note kar liya: Rs 3000 on Saturday 14 November."
