@@ -32,7 +32,8 @@ PACK = LanguagePack(
     negation=(r"\b(nahi|nahin)\b",),
     paid=(r"\bpayment mil gay(a|i)\b",),
     stall=((r"check kar(te|ti|ta) (hain|hoon|hun)|check kar rah(a|i|e)|"
-           r"dekh rah(a|i|e) (hoon|hun|hain)|ek (minute|second)"),),
+           r"dekh rah(a|i|e) (hoon|hun|hain)|ek (minute|second)"),
+           r"\brecord kar (rahi|raha|deti|deta|dungi|dunga) (hoon|hun|hu)\b"),
     possessive=F({"aapka", "aapki", "aapke", "aapko", "tumhara", "tumhari"}),
     status=F({"bakaya", "baaki", "peeche"}),
     greeting="Namaste, main {agent} bol rahi hoon {lender} se. Kya meri baat {first_name} ji se "

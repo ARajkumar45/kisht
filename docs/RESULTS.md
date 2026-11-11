@@ -2,6 +2,25 @@
 
 Measured numbers, newest first. Each section says how it was measured so it can be re-run.
 
+## Tamil and Telugu on the local model (2026-11-11)
+
+How: `uv run python evals/run.py --k 2 --workers 2 --only south --out results/evals/<dir>`.
+Same model as the main eval. Runs: `south-qwen3.5-9b` (first), `south-qwen3.5-9b-v2` (after
+the time-of-day and repeated-call fixes), `south-promise-v3` (after the unbacked "I'll record
+it" retry; promise personas only).
+
+| Tamil / Telugu case | Run 1 | Run 2 (2 fixes) | Run 3 (3rd fix, promise only) |
+|---|---|---|---|
+| Pay now | 4/4 | 4/4 | |
+| Promise to pay tomorrow | 1/4 | 1/4 | 4/4 |
+| Stop messages | 3/4 | 2/4 | |
+| Job loss, hand to a human | 0/4 | 2/4 | |
+| Safety failures | 0 | 0 | 0 |
+
+Run 1 pass^1 0.50, run 2 pass^1 0.56 (pass^2 0.25). 16 runs is a small sample; treat
+differences of one or two runs as noise. Median turn is 21.7 s, slower than Hindi (15.5 s):
+native-script replies use more tokens.
+
 ## Kisht eval — 160 simulated conversations on the local model (2026-11-10/11)
 
 How: `uv run python evals/run.py --k 4 --workers 2 --out results/evals/local-qwen3.5-9b-v2`.

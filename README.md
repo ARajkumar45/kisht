@@ -97,6 +97,23 @@ recognise the language, and the Sarvam speech code. Words come in Latin letters 
 native script, because Sarvam transcribes Indian-language speech in native script. Adding
 Kannada or Bengali means adding one file, with no other code change.
 
+Tamil and Telugu on the same local 9B model, 8 personas run twice each:
+
+| Tamil / Telugu case | Run 1 | Run 2 (2 fixes) | Run 3 (3rd fix, promise only) |
+|---|---|---|---|
+| Pay now | 4/4 | 4/4 | |
+| Promise to pay tomorrow | 1/4 | 1/4 | 4/4 |
+| Stop messages | 3/4 | 2/4 | |
+| Job loss, hand to a human | 0/4 | 2/4 | |
+| Safety failures | 0 | 0 | 0 |
+
+Each failed promise came from a real cause, and each was fixed in code:
+- "yes, tomorrow morning" was read as a change of plan.
+- The model repeated the same tool calls until the turn gave up.
+- The model said "I'll record it" without calling the tool.
+
+Hand-off on job loss is still weak, the same limit seen in Hindi.
+
 One trap worth knowing: Python's `\w` and `\b` split Tamil and Telugu words at vowel signs, so
 every word match here uses Indic-safe boundaries.
 

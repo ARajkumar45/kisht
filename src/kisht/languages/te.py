@@ -36,7 +36,8 @@ PACK = LanguagePack(
     waiver=(r"\b(maafi|tagginchamu|tagginchanu) (chesam|chesanu)?", r"మాఫీ|తగ్గించాం|తగ్గించాను"),
     negation=(r"\b(kudaradu|ledu|kaadu)\b", r"కుదరదు|లేదు|కాదు"),
     paid=(r"\bpayment (vachindi|andindi)", r"(డబ్బు|payment|పేమెంట్) (వచ్చింది|అందింది)"),
-    stall=(r"okka nimisham|check chestanu|\bchustanu\b", r"ఒక్క నిమిషం|చెక్ చేస్తాను"),
+    stall=(r"okka nimisham|check chestanu|\bchustanu\b", r"ఒక్క నిమిషం|చెక్ చేస్తాను", r"\brecord (chestanu|chesta)\b",
+           r"(రికార్డ్|నమోదు) చేస్త"),
     possessive=F({"mee", "meeku", "mi", "మీ", "మీకు", "మీయొక్క"}),
     status=F({"baaki", "బాకీ", "ఆలస్యం", "పెండింగ్"}),
     greeting="నమస్కారం, నేను {lender} నుండి {agent} మాట్లాడుతున్నాను. {first_name} గారితో "

@@ -41,7 +41,8 @@ PACK = LanguagePack(
     negation=(r"\b(mudiyadhu|mudiyaathu)\b", r"முடியாது"),
     paid=(r"\bpayment (vandhuduchu|vanduduchu|kidaichiduchu)", r"(பணம்|payment) (வந்துவிட்டது|வந்துடுச்சு|கிடைச்சுடுச்சு)"),
     stall=(r"konjam wait|check (panren|pannuren)|\bpaakuren\b|oru nimisham",
-           r"ஒரு நிமிஷம்|செக் பண்றேன்"),
+           r"ஒரு நிமிஷம்|செக் பண்றேன்", r"\brecord (panren|pannuren)\b",
+           r"பதிவு (செய்கிறேன்|பண்றேன்)|ரெக்கார்டு பண்றேன்"),
     possessive=F({"unga", "ungal", "ungaloda", "உங்க", "உங்கள்", "உங்களோட", "உங்களுடைய"}),
     status=F({"baaki", "nilluvai", "நிலுவை", "பாக்கி", "தாமதம்"}),
     greeting="வணக்கம், நான் {lender} நிறுவனத்திலிருந்து {agent} பேசுகிறேன். {first_name} அவர்களிடம் "

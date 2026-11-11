@@ -110,6 +110,10 @@ def test_claims_only_code_can_make():
     assert not claims_waiver("Thallupadi panniten-nu solla mudiyadhu")
     assert is_stall("Oru nimisham, check panren")
     assert is_stall("ఒక్క నిమిషం")
+    # seen live: "I will record it now" in Telugu with no tool call
+    assert is_stall("మీరు రేపు 3000 రూపాయలు చెల్లించాల్సి ఉంది, అది నేను ఇప్పుడు రికార్డ్ చేస్తాను")
+    assert is_stall("I'll record your promise now") and is_stall("Main record kar rahi hoon")
+    assert not is_stall("Dhanyavaad, note kar liya")
 
 
 def test_lines_follow_the_language():

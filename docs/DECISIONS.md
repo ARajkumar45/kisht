@@ -125,6 +125,8 @@ To change a decision: edit its line, add the date and the reason.
 - D91. Language is a plug-in: one module per language (kisht/languages/<code>.py) holds every language-specific line, word list and phrase. Code checks use English plus the call's language, not every language at once, so a Hindi word cannot be misread as a Tamil "no". Tamil and Telugu speech goes to Sarvam STT with ta-IN / te-IN; Hindi keeps en-IN (D84). Code lines are in native script so text-to-speech reads them correctly; on a voice call the model is told to reply in native script too.
 - D92. The 40 Tamil/Telugu borrowers in the loan book use their own random stream, so the original 200 (and every demo and doc that names them) stay identical.
 
+- D93. Three fixes found by the Tamil/Telugu runs, all general: time-of-day words do not block a yes to a date-only promise; identical tool calls repeated within one turn stop the loop (code reads back a pending promise instead); "I'll record it" without the tool counts as a stall and gets one retry. Promise personas went from 1/4 to 4/4.
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?

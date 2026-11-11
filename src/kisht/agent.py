@@ -43,8 +43,8 @@ ENDING_ACTIONS = {"opt_out", "escalate_to_human"}
 
 NOTE = {"role": "user", "content": (
     "[System note, not from the borrower] Do not answer from memory and do not say 'let me "
-    "check'. Use the tools now (verify_identity first if not done), then answer from the "
-    "results.")}
+    "check' or 'I will record it'. Use the tools now (verify_identity first if not done; "
+    "record_promise_to_pay if the borrower named a date), then answer from the results.")}
 UNBACKED = {"role": "user", "content": (
     "[System note, not from the borrower] You said you sent or will send a payment link, but "
     "you did not call send_payment_link. Call it now if the borrower wants a link; otherwise "

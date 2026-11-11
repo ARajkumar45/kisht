@@ -1,0 +1,23 @@
+{
+  "runs": 4,
+  "personas": 2,
+  "k": 2,
+  "pass_1": 1.0,
+  "pass_k": 1.0,
+  "by_category": {
+    "south": {
+      "personas": 2,
+      "pass_1": 1.0,
+      "pass_2": 1.0
+    }
+  },
+  "failed_checks": {},
+  "guard_blocks": {
+    "false_claim_blocked": 1
+  },
+  "replaced": {
+    "unbacked_link_claim": 1
+  },
+  "median_turn_s": 21.22,
+  "errors": 0
+}
