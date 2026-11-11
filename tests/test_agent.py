@@ -233,3 +233,15 @@ def test_confirmation_claim_without_a_saved_promise_is_replaced(guard, calls, ac
     agent.handle("PIN 560038, 14 ko 3000")
     t = agent.handle("Thank you")                      # not a clear yes
     assert t.replaced == ["false_promise_claim"] and t.reply.endswith(("Is that right?", "Sahi hai?"))
+
+
+def test_identity_detail_without_the_tool_gets_one_retry(guard, calls, account):
+    # Seen in the Docker test: the model said "this DOB doesn't look right" without checking.
+    model = FakeModel(text("Yeh date sahi nahi lag rahi. PIN code batayein?"),
+                      tool("verify_identity", date_of_birth="1990-04-02"),
+                      tool("get_dues"),
+                      text("Dhanyavaad Priya ji, pehchan ho gayi."))
+    agent, _ = start(guard, calls, account, model)
+    turn = agent.handle("Haan, 2 April 1990")
+    assert turn.tool_calls == ["verify_identity", "get_dues"]
+    assert calls.get(agent.call_id, "identity_verified")

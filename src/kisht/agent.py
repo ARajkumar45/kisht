@@ -54,6 +54,12 @@ UNBACKED = {"role": "user", "content": (
     "[System note, not from the borrower] You said you sent or will send a payment link, but "
     "you did not call send_payment_link. Call it now if the borrower wants a link; otherwise "
     "reply again without claiming a link.")}
+UNCHECKED_ID = {"role": "user", "content": (
+    "[System note, not from the borrower] The borrower just gave a date of birth or PIN code, "
+    "but you did not call verify_identity. Only the tool can say whether it matches: call it "
+    "now with what they said, then reply from its result.")}
+_ID_DETAIL = re.compile(r"\b\d{6}\b|\b\d{1,2}[ ./-]?(st|nd|rd|th)?[ ./-]?"
+                        r"([a-z]{3,9}|\d{1,2})[ ,./-]+(19|20)\d{2}\b", re.IGNORECASE)
 AFTER_PROMISE = {"role": "user", "content": (
     "[System note, not from the borrower] The promise is saved and the borrower has heard "
     "that. Schedule a follow-up for the day after the promised date with schedule_followup, "
@@ -226,10 +232,21 @@ class Agent:
         if _STALL.search(text):
             self._log("stall_retry", {"reply": text[:300]}, "error")
             return NOTE
+        if (not self.calls.get(self.call_id, "identity_verified", False)
+                and "verify_identity" not in result.tool_calls
+                and _ID_DETAIL.search(self._last_user_text())):
+            self._log("unchecked_identity_retry", {"reply": text[:300]}, "error")
+            return UNCHECKED_ID
         if claims_link_sent(text) and "send_payment_link" not in result.tool_calls:
             self._log("unbacked_claim_retry", {"reply": text[:300]}, "error")
             return UNBACKED
         return None
+
+    def _last_user_text(self) -> str:
+        for m in reversed(self.calls.messages(self.call_id)):
+            if m.get("role") == "user":
+                return m.get("content") or ""
+        return ""
 
     def _checked(self, text: str, result: TurnResult) -> str:
         """The last line of defence before anything is said or sent."""
