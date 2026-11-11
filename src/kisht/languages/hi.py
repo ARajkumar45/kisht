@@ -18,6 +18,7 @@ PACK = LanguagePack(
                   "shukravar", "shanivar", "ravivar",
                   "बजे", "सुबह", "शाम", "दोपहर", "रात", "कल", "परसों", "आज", "सोमवार", "मंगलवार",
                   "बुधवार", "गुरुवार", "शुक्रवार", "शनिवार", "रविवार", "पहले"}),
+    day_parts=F({"subah", "shaam", "sham", "dopahar", "raat", "सुबह", "शाम", "दोपहर", "रात"}),
     today=F({"aaj", "आज"}), tomorrow=F({"kal", "कल"}), day_after=F({"parso", "परसों"}),
     weekdays=tuple(F(d) for d in [("somvar", "सोमवार"), ("mangalvar", "मंगलवार"),
                                   ("budhvar", "बुधवार"), ("guruvar", "गुरुवार"),

@@ -11,6 +11,7 @@ PACK = LanguagePack(
     harmless=("no problem", "no worries"),
     time_words=F({"am", "pm", "o'clock", "oclock", "morning", "afternoon", "evening", "night",
                   "noon", "today", "tomorrow", "instead", "rather", "earlier", "later"}),
+    day_parts=F({"morning", "afternoon", "evening", "night", "noon"}),
     today=F({"today"}), tomorrow=F({"tomorrow"}), day_after=F(),
     weekdays=tuple(F({d}) for d in ["monday", "tuesday", "wednesday", "thursday", "friday",
                                     "saturday", "sunday"]),

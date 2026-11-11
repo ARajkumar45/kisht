@@ -245,3 +245,15 @@ def test_identity_detail_without_the_tool_gets_one_retry(guard, calls, account):
     turn = agent.handle("Haan, 2 April 1990")
     assert turn.tool_calls == ["verify_identity", "get_dues"]
     assert calls.get(agent.call_id, "identity_verified")
+
+
+def test_repeated_identical_tool_calls_stop_and_read_back(guard, calls, account):
+    # Seen live in Telugu: the model re-ran the same promise + link calls until it gave up.
+    promise = tool("record_promise_to_pay", amount=3000, pay_date="2026-11-11")
+    model = FakeModel(tool("verify_identity", date_of_birth="1990-04-02"), tool("get_dues"),
+                      text("Ok."), promise, promise)
+    agent, _ = start(guard, calls, account, model)
+    agent.handle("Haan main Priya, DOB 2 April 1990")
+    turn = agent.handle("Kal 3000 de dungi")
+    assert turn.tool_calls == ["record_promise_to_pay"] and turn.model_calls == 2
+    assert "Rs 3000" in turn.reply and turn.reply.endswith(("Is that right?", "Sahi hai?"))

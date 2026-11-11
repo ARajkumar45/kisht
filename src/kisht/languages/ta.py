@@ -22,6 +22,7 @@ PACK = LanguagePack(
                   "naalaiku", "naliku", "naalanniki",
                   "மணி", "காலை", "மதியம்", "மாலை", "இரவு", "முன்னாடி", "அப்புறம்", "இன்று",
                   "இன்னைக்கு", "நாளை", "நாளைக்கு", "நாளன்னைக்கு"}),
+    day_parts=F({"kaalai", "madhiyam", "saayankaalam", "maalai", "raathiri", "காலை", "மதியம்", "மாலை", "இரவு"}),
     today=F({"indru", "innaiku", "inniki", "இன்று", "இன்னைக்கு"}),
     tomorrow=F({"naalai", "naalaikku", "naalaiku", "naliku", "நாளை", "நாளைக்கு"}),
     day_after=F({"naalanniki", "நாளன்னைக்கு"}),

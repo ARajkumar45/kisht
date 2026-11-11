@@ -1,7 +1,7 @@
 # Kisht — an EMI repayment agent for Indian lenders
 
 An AI agent that contacts borrowers about upcoming and missed EMIs, by **chat or voice**, in
-**Hindi, English or Hinglish**, and gets to an outcome: pay now, a promise to pay within the
+**Hindi, English, Tamil or Telugu** (including Hinglish, Tanglish and Tenglish), and gets to an outcome: pay now, a promise to pay within the
 lender's policy, or a hand-off to a human for hardship, disputes and waivers.
 
 **The model plans and decides. Code guards only what must never go wrong** (RBI calling hours,
@@ -87,6 +87,18 @@ Local-first, every outside piece behind a port chosen in `config.yaml`:
 Each model server has a concurrency limit shared by every role on it plus a bounded queue
 (this Mac runs 1–2 conversations at once; beyond that its GPU ran out of memory in a load test),
 and a health check that runs a real completion.
+
+## Languages
+
+Everything that depends on language sits in one module per language under
+`src/kisht/languages/`. Each module holds the lines code speaks, the yes, no and time words code
+uses to judge the borrower, the phrases it uses to catch false claims by the agent, how to
+recognise the language, and the Sarvam speech code. Words come in Latin letters for chat and in
+native script, because Sarvam transcribes Indian-language speech in native script. Adding
+Kannada or Bengali means adding one file, with no other code change.
+
+One trap worth knowing: Python's `\w` and `\b` split Tamil and Telugu words at vowel signs, so
+every word match here uses Indic-safe boundaries.
 
 ## Evaluation
 

@@ -19,6 +19,7 @@ PACK = LanguagePack(
                   "mundu", "tarvata", "taruvata", "ivala", "eeroju", "repu", "ellundi",
                   "గంటలకు", "ఉదయం", "మధ్యాహ్నం", "సాయంత్రం", "రాత్రి", "ముందు", "తర్వాత",
                   "ఈరోజు", "ఇవాళ", "రేపు", "ఎల్లుండి"}),
+    day_parts=F({"podduna", "udayam", "madhyaahnam", "saayantram", "raatri", "ఉదయం", "మధ్యాహ్నం", "సాయంత్రం", "రాత్రి"}),
     today=F({"ivala", "eeroju", "ఈరోజు", "ఇవాళ"}),
     tomorrow=F({"repu", "రేపు"}),
     day_after=F({"ellundi", "ఎల్లుండి"}),

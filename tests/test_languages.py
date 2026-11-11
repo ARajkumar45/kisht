@@ -67,6 +67,9 @@ def test_no_or_change(text, lang):
     ("ஆமாம், நாளைக்கு 3000", "ta"),
     ("Sare, repu 3000 kadatanu", "te"),
     ("అవును, రేపు బుధవారం", "te"),
+    # seen in the live eval: "yes, my salary comes tomorrow morning, I'll pay 3000 tomorrow"
+    ("అవును Asha గారు, నా జీతం రేపు ఉదయం వస్తుంది, రేపు 3000 రూపాయలు చెల్లిస్తాను", "te"),
+    ("seri, naalaikku kaalai 3000 kattaren", "ta"),
 ])
 def test_repeating_the_promise_is_a_yes(text, lang):
     assert is_yes_to_promise(text, 3000, PAY, TODAY, lang)

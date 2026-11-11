@@ -1,7 +1,7 @@
 [project]
 name = "kisht"
 version = "0.1.0"
-description = "EMI repayment agent for Indian lenders: plans, talks (voice + chat, Hindi/English), and is guarded by code"
+description = "EMI repayment agent for Indian lenders: plans, talks (voice + chat, Hindi/English/Tamil/Telugu), and is guarded by code"
 readme = "README.md"
 authors = [
     { name = "Raj Kumar Arumugam", email = "armugamvrajkumar121@gmail.com" }

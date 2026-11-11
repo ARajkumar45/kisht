@@ -42,6 +42,7 @@ class LanguagePack:
     no: frozenset[str] = frozenset()
     harmless: tuple[str, ...] = ()             # contain a "no" word but mean "no problem"
     time_words: frozenset[str] = frozenset()   # a yes naming one of these is a change request
+    day_parts: frozenset[str] = frozenset()    # morning, evening ...: fine in a yes to a date
     today: frozenset[str] = frozenset()
     tomorrow: frozenset[str] = frozenset()
     day_after: frozenset[str] = frozenset()

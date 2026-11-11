@@ -122,6 +122,9 @@ To change a decision: edit its line, add the date and the reason.
 - D89. Opt-out, escalation and agreement questions never need identity; the prompt says so explicitly because "identity first" made the model ask for a DOB before honouring "stop messaging me". A claim of payment the ledger does not show is a dispute: escalate, never argue or send a link.
 - D90. Eval result on the local 9B model: pass^1 0.67, pass^4 0.38, zero safety failures in 160 runs. The model's weak spots are escalation and tool use for agreement questions; the next lever is a bigger model through the same adapter, not more prompt rules.
 
+- D91. Language is a plug-in: one module per language (kisht/languages/<code>.py) holds every language-specific line, word list and phrase. Code checks use English plus the call's language, not every language at once, so a Hindi word cannot be misread as a Tamil "no". Tamil and Telugu speech goes to Sarvam STT with ta-IN / te-IN; Hindi keeps en-IN (D84). Code lines are in native script so text-to-speech reads them correctly; on a voice call the model is told to reply in native script too.
+- D92. The 40 Tamil/Telugu borrowers in the loan book use their own random stream, so the original 200 (and every demo and doc that names them) stay identical.
+
 ## Open questions
 - O1. Which business is the first customer (clinic, salon, or PG)?
 - O2. Which languages do that business's callers actually use?

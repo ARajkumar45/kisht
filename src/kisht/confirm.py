@@ -83,6 +83,7 @@ def is_yes_to_promise(text: str, amount: int, pay_date: date, today: date,
         if p.months:
             agree |= p.months[pay_date.month - 1]
         agree |= {0: p.today, 1: p.tomorrow, 2: p.day_after}.get(offset, frozenset())
+        agree |= p.day_parts             # "tomorrow morning" still agrees with "tomorrow"
     pattern = word_pattern(agree)
     if pattern:
         t = pattern.sub(" ", t)

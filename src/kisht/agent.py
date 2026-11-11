@@ -153,6 +153,7 @@ class Agent:
 
     def _run_model(self, result: TurnResult, extra: list[dict]) -> str:
         nudged = False
+        seen: set[tuple[str, str]] = set()
         for _ in range(MAX_TOOL_ROUNDS):
             messages = self._messages() + extra
             reply = self._ask(messages, result)
@@ -166,6 +167,15 @@ class Agent:
                 if not text:
                     break
                 return self._checked(text, result)
+            calls = {(tc.name, tc.arguments) for tc in reply.tool_calls}
+            if calls <= seen:
+                # The model is repeating calls it already made this turn (seen live in Telugu:
+                # promise + link, three times over). Stop the loop instead of burning rounds.
+                self._log("repeated_tool_calls", {"calls": sorted(n for n, _ in calls)}, "error")
+                pending = self.calls.get(self.call_id, "pending_promise")
+                return (self.say("read_back", read_back=pending["read_back"]) if pending
+                        else self.say("stuck"))
+            seen |= calls
             self.calls.append(self.call_id, {
                 "role": "assistant", "content": reply.content or None,
                 "tool_calls": [{"id": tc.id, "type": "function",
