@@ -158,7 +158,22 @@ uv run python evals/run.py --k 4           # evals (hours on a laptop; resumable
 Voice: `tools/run_bolna.sh` (Bolna fork from source), `uv run kisht bridge`, then
 `uv run python tools/make_voice_agent.py br_0009 --post` and talk through Bolna's mic client.
 
-Docker (app + Redis; the model server stays on the host): `docker compose up --build`.
+### Docker
+
+The app and Redis run in containers. The model server stays on the host, because containers
+cannot use the Mac GPU. Tested from a fresh clone: the first start builds the 200-borrower
+loan book, and a full Hindi promise-to-pay conversation through the bridge saved the promise,
+the payment link and the follow-up in the ledger.
+
+```bash
+mlx_lm.server --model mlx-community/Qwen3.5-9B-4bit --port 8080   # on the host
+docker compose up -d --build                                       # bridge on :5050
+docker compose exec kisht ./docker-entrypoint.sh health
+docker compose run --rm kisht chat --borrower br_0009
+```
+
+No Mac? `docker compose --profile ollama up` starts an Ollama server too; point
+`config.docker.yaml` at it.
 
 ## Layout
 
