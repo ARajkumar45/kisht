@@ -13,6 +13,7 @@ llm_roles:
   agent:     {server: host, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.3, max_tokens: 400}
   planner:   {server: host, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.2, max_tokens: 900}
   simulator: {server: host, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.7, max_tokens: 200}
+  reviewer:  {server: host, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.1, max_tokens: 700}
 
 stores:
   redis_url: redis://redis:6379/0

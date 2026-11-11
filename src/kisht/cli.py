@@ -5,6 +5,8 @@
     uv run kisht plan                        # the planner agent decides today's outreach queue
     uv run kisht chat --borrower br_0003     # be the borrower; the agent contacts you by chat
     uv run kisht bridge                      # voice: the endpoint Bolna uses as its LLM (:5050)
+    uv run kisht simulate --n 16             # plan today + 16 simulated calls, reviewed
+    uv run kisht serve                       # contact-centre dashboard + API (:8000)
 
 While chatting: /state  /audit  /telemetry  /quit
 """
@@ -21,10 +23,10 @@ from kisht.agent import Agent
 from kisht.audit import AuditLog
 from kisht.config import LLMFactory, load_config
 from kisht.guard import GuardRefused, PolicyGuard
-from kisht.knowledge import Agreement
 from kisht.ledger import SqliteLedger
 from kisht.lender import LenderRegistry
 from kisht.planner import Planner
+from kisht.runtime import build
 
 DIM, BOLD, END = "\033[2m", "\033[1m", "\033[0m"
 
@@ -63,29 +65,28 @@ def cmd_due(args) -> int:
 
 
 def cmd_chat(args) -> int:
-    cfg, lender, ledger = _setup(args)
-    calls = RedisCallState.from_url(cfg.stores.redis_url)
-    try:
-        calls.r.ping()
-    except Exception as e:  # noqa: BLE001 - show any connection problem plainly
-        print(f"Cannot reach Redis at {cfg.stores.redis_url}: {e}", file=sys.stderr)
-        return 2
-    audit = AuditLog(f"{cfg.stores.audit_dir}/kisht_{datetime.now():%Y%m%d}.jsonl")
     now = None
     if args.at:
         fixed = datetime.fromisoformat(args.at)
         now = lambda: fixed
-    guard = PolicyGuard(lender, ledger, calls, audit, now=now)
+    rt = build(args.config, now=now)
+    try:
+        rt.calls.r.ping()
+    except Exception as e:  # noqa: BLE001 - show any connection problem plainly
+        print(f"Cannot reach Redis at {rt.cfg.stores.redis_url}: {e}", file=sys.stderr)
+        return 2
+    cfg, lender, ledger, calls = rt.cfg, rt.lenders.get(args.lender), rt.ledger, rt.calls
+    guard = rt.guards[lender.id]
     loans = ledger.loans_for(args.borrower)
     if not loans:
         print(f"No loans for {args.borrower}. Try: uv run kisht due", file=sys.stderr)
         return 2
     model = LLMFactory(cfg).for_role("agent")
     try:
-        agreement = Agreement.load(f"{cfg.knowledge_dir}/{lender.id}.yaml")
         agent, greeting = Agent.start(guard=guard, calls=calls, model=model,
                                       borrower_id=args.borrower, loan_id=loans[0]["id"],
-                                      channel="chat", agreement=agreement)
+                                      channel="chat", agreement=rt.agreements.get(lender.id),
+                                      insights=rt.insights)
     except GuardRefused as e:
         print(f"Not allowed to contact now: {e.code}: {e.message}", file=sys.stderr)
         return 1
@@ -105,11 +106,11 @@ def cmd_chat(args) -> int:
             print(json.dumps(calls.get_state(agent.call_id), indent=2, ensure_ascii=False))
             continue
         if line == "/audit":
-            for e in audit.for_call(agent.call_id):
+            for e in rt.audit.for_call(agent.call_id):
                 print(f"{DIM}{e['outcome']:6} {e['action']:20} {e['detail']}{END}")
             continue
         if line == "/telemetry":
-            print(json.dumps(audit.telemetry(audit.for_call(agent.call_id)), indent=2))
+            print(json.dumps(rt.audit.telemetry(rt.audit.for_call(agent.call_id)), indent=2))
             continue
         t = agent.handle(line)
         print(f"{BOLD}agent>{END} {t.reply}")
@@ -163,16 +164,31 @@ def cmd_bridge(args) -> int:
 
     from kisht.voice_bridge import VoiceBridge, create_app
 
-    cfg = load_config(args.config)
-    lenders = LenderRegistry.from_dir(cfg.lenders_dir)
-    calls = RedisCallState.from_url(cfg.stores.redis_url)
-    ledger = SqliteLedger(cfg.stores.ledger_db)
-    audit = AuditLog(f"{cfg.stores.audit_dir}/voice_{datetime.now():%Y%m%d}.jsonl")
-    guards = {lid: PolicyGuard(lenders.get(lid), ledger, calls, audit) for lid in lenders.ids()}
-    agreements = {lid: Agreement.load(f"{cfg.knowledge_dir}/{lid}.yaml") for lid in lenders.ids()}
-    bridge = VoiceBridge(lenders=lenders, guards=guards, calls=calls,
-                         model=LLMFactory(cfg).for_role("agent"), agreements=agreements)
+    rt = build(args.config, audit_name="voice")
+    bridge = VoiceBridge(lenders=rt.lenders, guards=rt.guards, calls=rt.calls,
+                         model=rt.models.for_role("agent"), agreements=rt.agreements,
+                         insights=rt.insights)
     uvicorn.run(create_app(bridge), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def cmd_simulate(args) -> int:
+    from kisht.simulate_day import simulate_day
+
+    now = datetime.fromisoformat(args.at) if args.at else datetime.now().astimezone()
+    rt = build(args.config, audit_name="simday", now=lambda: now)
+    simulate_day(rt, lender_id=args.lender, now=now, n=args.n, workers=args.workers)
+    return 0
+
+
+def cmd_serve(args) -> int:
+    import uvicorn
+
+    from kisht.api import create_api
+
+    rt = build(args.config, audit_name="dashboard")
+    print(f"Kisht dashboard: http://{args.host}:{args.port}")
+    uvicorn.run(create_api(rt), host=args.host, port=args.port, log_level="warning")
     return 0
 
 
@@ -193,9 +209,16 @@ def main(argv=None) -> int:
     br = sub.add_parser("bridge")
     br.add_argument("--host", default="127.0.0.1")
     br.add_argument("--port", type=int, default=5050)
+    sm = sub.add_parser("simulate", help="plan the day and run N simulated conversations")
+    sm.add_argument("--n", type=int, default=16)
+    sm.add_argument("--workers", type=int, default=2)
+    sm.add_argument("--at", help="fixed clock, e.g. 2026-11-11T10:00:00+05:30")
+    sv = sub.add_parser("serve", help="dashboard + API")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
     args = p.parse_args(argv)
     return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat, "plan": cmd_plan,
-            "bridge": cmd_bridge}[args.cmd](args)
+            "bridge": cmd_bridge, "simulate": cmd_simulate, "serve": cmd_serve}[args.cmd](args)
 
 
 if __name__ == "__main__":

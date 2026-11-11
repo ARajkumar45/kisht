@@ -11,6 +11,8 @@ dependencies = [
     "fastapi>=0.162.2",
     "httpx>=0.28.1",
     "openai>=3.46.0",
+    "opentelemetry-api>=1.45.2",
+    "opentelemetry-sdk>=1.45.2",
     "pydantic>=2.14.3",
     "pyyaml>=6.0.3",
     "redis>=8.1.0",
@@ -19,6 +21,11 @@ dependencies = [
 
 [project.scripts]
 kisht = "kisht.cli:main"
+
+[project.optional-dependencies]
+otlp = [
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

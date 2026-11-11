@@ -36,3 +36,14 @@ banned_phrases:                  # blocked in anything the agent says (threats, 
   - badnaam
 
 escalation_desk: "Demo Finance collections desk, weekdays 10:00-18:00"
+
+desk_teams:                      # which human team picks up each kind of hand-off
+  hardship: Hardship team
+  bereavement: Hardship team
+  dispute: Disputes team
+  waiver: Collections manager
+  settlement: Collections manager
+  restructure: Collections manager
+  wrong_person: Data quality
+  default: Collections desk
+# qa_scorecard: the default collections scorecard (src/kisht/lender.py) unless set here

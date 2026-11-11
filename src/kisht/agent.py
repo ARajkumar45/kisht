@@ -30,12 +30,14 @@ from kisht.confirm import (
     leaks_account,
 )
 from kisht.guard import GuardRefused, PolicyGuard
+from kisht.insights import InsightsStore
 from kisht.knowledge import Agreement
 from kisht.languages import detect
 from kisht.languages import say as pack_say
 from kisht.ports import CallState, ChatModel, ModelUnavailable
 from kisht.prompt import GREETING, build_messages
 from kisht.tools import TOOL_SCHEMAS, ToolRunner
+from kisht.tracing import call_span, child_span, mark_error, set_attrs
 
 MAX_TOOL_ROUNDS = 6
 ENDING_ACTIONS = {"opt_out", "escalate_to_human"}
@@ -79,8 +81,9 @@ class TurnResult:
 
 class Agent:
     def __init__(self, call_id: str, guard: PolicyGuard, calls: CallState, model: ChatModel,
-                 agreement: Agreement | None = None):
+                 agreement: Agreement | None = None, insights: InsightsStore | None = None):
         self.call_id = call_id
+        self.insights = insights
         self.guard = guard
         self.lender = guard.lender
         self.calls = calls
@@ -89,7 +92,8 @@ class Agent:
 
     @classmethod
     def start(cls, *, guard: PolicyGuard, calls: CallState, model: ChatModel, borrower_id: str,
-              loan_id: str, channel: str, agreement: Agreement | None = None
+              loan_id: str, channel: str, agreement: Agreement | None = None,
+              insights: InsightsStore | None = None, source: str = "live"
               ) -> tuple[Agent, str]:
         """Bind a new conversation to one account (after the contact rules) and greet.
         Raises GuardRefused if the borrower may not be contacted now."""
@@ -104,7 +108,12 @@ class Agent:
         greeting = GREETING.get(lang, GREETING["en"]).format(
             agent=guard.lender.agent_name, lender=_short(guard.lender.name), first_name=first_name)
         calls.append(call_id, {"role": "assistant", "content": greeting})
-        return cls(call_id, guard, calls, model, agreement), greeting
+        if insights:
+            insights.open_call(call_id=call_id, lender_id=guard.lender.id,
+                               borrower_id=borrower_id, loan_id=loan_id,
+                               borrower_name=borrower["name"] if borrower else None,
+                               channel=channel, language=lang, greeting=greeting, source=source)
+        return cls(call_id, guard, calls, model, agreement, insights), greeting
 
     @property
     def language(self) -> str:
@@ -116,6 +125,24 @@ class Agent:
     # ---------- one turn ----------
 
     def handle(self, text: str) -> TurnResult:
+        with call_span(self.call_id, "turn", kisht__channel=self.calls.get(
+                self.call_id, "channel", "chat")) as span:
+            result = self._handle(text)
+            set_attrs(span, kisht__language=self.language, kisht__tools=result.tool_calls,
+                      kisht__refused=result.refused, kisht__replaced=result.replaced,
+                      kisht__promise_saved=result.promise_saved, kisht__ended=result.ended,
+                      kisht__model_calls=result.model_calls, kisht__fallback=result.fallback)
+            if result.fallback:
+                mark_error(span, "model unavailable")
+        if self.insights:
+            self.insights.add_turn(
+                self.call_id, borrower=text, agent=result.reply, language=self.language,
+                tools=result.tool_calls, refused=result.refused, replaced=result.replaced,
+                seconds=round(result.model_latency_s, 2), model_calls=result.model_calls,
+                prompt_tokens=result.prompt_tokens, cached_tokens=result.cached_tokens)
+        return result
+
+    def _handle(self, text: str) -> TurnResult:
         started = time.perf_counter()
         self.calls.append(self.call_id, {"role": "user", "content": text})
         self._follow_language(text)
@@ -141,6 +168,13 @@ class Agent:
         return result
 
     def _save_promise(self, pending: dict, result: TurnResult) -> str:
+        with child_span("save_promise", kisht__amount=pending["amount"],
+                        kisht__pay_date=pending["pay_date"]) as span:
+            text = self._save_promise_inner(pending, result)
+            set_attrs(span, kisht__saved=result.promise_saved)
+            return text
+
+    def _save_promise_inner(self, pending: dict, result: TurnResult) -> str:
         self.guard.mark_borrower_yes(self.call_id)
         try:
             saved = self.guard.confirm_promise(self.call_id)
@@ -161,7 +195,7 @@ class Agent:
                 note = self._needs_retry(reply.content or "", result)
                 if note:
                     nudged = True
-                    reply = self._ask([*messages, note], result)
+                    reply = self._ask([*messages, note], result, retry=True)
             if not reply.tool_calls:
                 text = (reply.content or "").strip()
                 if not text:
@@ -182,7 +216,13 @@ class Agent:
                                 "function": {"name": tc.name, "arguments": tc.arguments}}
                                for tc in reply.tool_calls]})
             for tc in reply.tool_calls:
-                out = self.tools.run(self.call_id, tc.name, tc.arguments)
+                with child_span("execute_tool", gen_ai__operation__name="execute_tool",
+                                gen_ai__tool__name=tc.name) as span:
+                    out = self.tools.run(self.call_id, tc.name, tc.arguments)
+                    set_attrs(span, kisht__ok=out.ok,
+                              kisht__refused=None if out.ok else out.content.get("refused"))
+                    if not out.ok:
+                        mark_error(span, str(out.content.get("refused", "error")))
                 result.tool_calls.append(tc.name)
                 if not out.ok:
                     result.refused.append(out.content.get("refused", "error"))
@@ -217,6 +257,13 @@ class Agent:
 
     def _checked(self, text: str, result: TurnResult) -> str:
         """The last line of defence before anything is said or sent."""
+        with child_span("reply_check") as span:
+            before = len(result.replaced)
+            out = self._checked_inner(text, result)
+            set_attrs(span, kisht__replaced=result.replaced[before:] or None)
+            return out
+
+    def _checked_inner(self, text: str, result: TurnResult) -> str:
         if self.guard.check_reply(self.call_id, text):
             result.replaced.append("banned_phrase")
             return self.say("polite")
@@ -265,10 +312,11 @@ class Agent:
                  if m["role"] in ("user", "assistant") and m.get("content")]
         note = f"Outcome: {outcome}."
         try:
-            reply = self.model.complete([{"role": "user", "content": (
-                "Write a case note for the loan-servicing team in at most two sentences, in "
-                "English: what the borrower said, what was agreed, what to do next. No phone "
-                f"numbers. Outcome code: {outcome}.\n\nCONVERSATION:\n" + "\n".join(lines))}])
+            with call_span(self.call_id, "case_note", kisht__outcome=outcome):
+                reply = self.model.complete([{"role": "user", "content": (
+                    "Write a case note for the loan-servicing team in at most two sentences, "
+                    "in English: what the borrower said, what was agreed, what to do next. No "
+                    f"phone numbers. Outcome code: {outcome}.\n\nCONVERSATION:\n" + "\n".join(lines))}])
             if reply.content.strip():
                 note = reply.content.strip()[:500]
         except ModelUnavailable:
@@ -277,6 +325,8 @@ class Agent:
         if contact_id:
             self.guard.ledger.close_contact(contact_id, outcome, note)
         self.calls.end_call(self.call_id, outcome)
+        if self.insights:
+            self.insights.close_call(self.call_id, outcome=outcome, note=note)
         return {"outcome": outcome, "note": note}
 
     # ---------- helpers ----------
@@ -296,8 +346,20 @@ class Agent:
                               self.calls.get(self.call_id, "first_name", "the borrower"),
                               self.calls.get(self.call_id, "channel", "chat"))
 
-    def _ask(self, messages: list[dict], result: TurnResult):
-        reply = self.model.complete(messages, TOOL_SCHEMAS)
+    def _ask(self, messages: list[dict], result: TurnResult, retry: bool = False):
+        with child_span("chat", gen_ai__operation__name="chat",
+                        gen_ai__request__model=getattr(self.model, "name", "model"),
+                        kisht__retry=retry or None) as span:
+            try:
+                reply = self.model.complete(messages, TOOL_SCHEMAS)
+            except ModelUnavailable as e:
+                mark_error(span, str(e)[:200])
+                raise
+            set_attrs(span, gen_ai__usage__input_tokens=reply.prompt_tokens,
+                      gen_ai__usage__output_tokens=reply.completion_tokens,
+                      kisht__cached_tokens=reply.cached_tokens,
+                      kisht__queue_wait_s=round(getattr(reply, "queue_wait_s", 0.0), 3),
+                      kisht__tool_calls=[tc.name for tc in reply.tool_calls] or None)
         result.model_calls += 1
         result.prompt_tokens += reply.prompt_tokens
         result.cached_tokens += reply.cached_tokens

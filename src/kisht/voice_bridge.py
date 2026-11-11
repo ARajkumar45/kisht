@@ -28,6 +28,7 @@ from kisht.adapters.call_state import RedisCallState
 from kisht.adapters.llm import health_check
 from kisht.agent import Agent, TurnResult
 from kisht.guard import GuardRefused, PolicyGuard
+from kisht.insights import InsightsStore
 from kisht.knowledge import Agreement
 from kisht.languages import say
 from kisht.lender import ConfigError, LenderRegistry
@@ -41,8 +42,10 @@ DEFAULT_RUN = "unpatched-default"
 class VoiceBridge:
     def __init__(self, *, lenders: LenderRegistry, guards: dict[str, PolicyGuard],
                  calls: RedisCallState, model: ChatModel,
-                 agreements: dict[str, Agreement] | None = None):
+                 agreements: dict[str, Agreement] | None = None,
+                 insights: InsightsStore | None = None):
         self.lenders = lenders
+        self.insights = insights
         self.guards = guards
         self.calls = calls
         self.model = model
@@ -69,14 +72,16 @@ class VoiceBridge:
         call_id = self.calls.r.get(key)
         agreement = self.agreements.get(lender_id)
         if call_id and self.calls.exists(call_id):
-            return Agent(call_id, guard, self.calls, self.model, agreement), False, None
+            return (Agent(call_id, guard, self.calls, self.model, agreement, self.insights),
+                    False, None)
         loans = guard.ledger.loans_for(borrower_id)
         if not loans:
             raise ConfigError(f"no loan for borrower {borrower_id!r}")
         try:
             agent, _greeting = Agent.start(guard=guard, calls=self.calls, model=self.model,
                                            borrower_id=borrower_id, loan_id=loans[0]["id"],
-                                           channel="voice", agreement=agreement)
+                                           channel="voice", agreement=agreement,
+                                           insights=self.insights)
         except GuardRefused as e:
             lang = (guard.ledger.borrower(borrower_id) or {}).get("language", "en")
             guard.audit.record(call_id=None, tenant_id=lender_id, action="voice_refused",

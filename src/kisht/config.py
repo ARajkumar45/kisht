@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from kisht.adapters.llm import LimitedModel, OpenAICompatibleModel, ServerSlots
 from kisht.ports import ChatModel
 
-Role = Literal["agent", "planner", "simulator"]
+Role = Literal["agent", "planner", "simulator", "reviewer"]
 
 
 class _Strict(BaseModel):
@@ -42,7 +42,12 @@ class LLMRole(_Strict):
 class Stores(_Strict):
     redis_url: str = "redis://localhost:6379/0"
     ledger_db: str = "data/ledger.sqlite"
+    insights_db: str = "data/insights.sqlite"     # call log, traces, reviews, human desk
     audit_dir: str = "audit"
+
+
+class Tracing(_Strict):
+    otlp_endpoint: str | None = None   # e.g. http://localhost:4318 for Jaeger / Phoenix
 
 
 class Speech(_Strict):
@@ -57,6 +62,7 @@ class Config(_Strict):
     llm_roles: dict[Role, LLMRole]
     stores: Stores = Stores()
     speech: Speech = Speech()
+    tracing: Tracing = Tracing()
     lenders_dir: str = "lenders"
     knowledge_dir: str = "knowledge"
 

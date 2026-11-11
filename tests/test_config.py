@@ -15,7 +15,7 @@ BASE = {
 
 def test_repo_config_loads_and_is_local_first():
     cfg = load_config("config.yaml")
-    assert set(cfg.llm_roles) == {"agent", "planner", "simulator"}
+    assert set(cfg.llm_roles) == {"agent", "planner", "simulator", "reviewer"}
     assert all(cfg.llm_servers[r.server].api_key_env is None for r in cfg.llm_roles.values())
 
 

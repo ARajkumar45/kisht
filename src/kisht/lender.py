@@ -55,6 +55,33 @@ class Promises(_Strict):
     max_open_promises: int = Field(1, ge=1)
 
 
+class QAItem(_Strict):
+    id: str = Field(pattern=r"^[a-z0-9_]+$")
+    check: str                       # what a reviewer looks for, in plain words
+
+
+# Collections QA scorecard, after common contact-centre practice and the RBI Fair Practices
+# Code for recovery (identify yourself, verify the borrower, no pressure, record what was
+# agreed). A lender can replace it in its YAML.
+DEFAULT_SCORECARD = [
+    QAItem(id="introduced", check="The agent said who they are and which lender they call from."),
+    QAItem(id="verified_first", check="Identity was verified before any loan detail was shared."),
+    QAItem(id="explained_dues", check="The amount and date due were explained simply and "
+                                      "correctly."),
+    QAItem(id="asked_reason", check="The agent asked what is stopping the payment before "
+                                    "pushing an option."),
+    QAItem(id="fitting_option", check="The agent offered an option that fits what the borrower "
+                                      "said (pay now, promise, part payment, or hand-off)."),
+    QAItem(id="clear_commitment", check="Any promise or payment was read back with amount and "
+                                        "date and confirmed by the borrower."),
+    QAItem(id="respectful", check="The agent was polite and patient, with no pressure, threats "
+                                  "or shaming."),
+    QAItem(id="right_handoff", check="Hardship, disputes, waiver or settlement requests and "
+                                     "wrong-person calls were handed to a human."),
+    QAItem(id="clear_close", check="The call ended with a clear next step."),
+]
+
+
 class Lender(_Strict):
     id: str = Field(pattern=r"^[a-z0-9-]+$")
     name: str
@@ -67,6 +94,11 @@ class Lender(_Strict):
     needs_human: list[HumanReason]
     banned_phrases: list[str]
     escalation_desk: str
+    desk_teams: dict[str, str] = {}               # escalation reason -> human team
+    qa_scorecard: list[QAItem] = DEFAULT_SCORECARD
+
+    def team_for(self, reason: str) -> str:
+        return self.desk_teams.get(reason, self.desk_teams.get("default", "Collections desk"))
 
     @field_validator("banned_phrases")
     @classmethod
