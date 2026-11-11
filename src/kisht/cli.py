@@ -177,7 +177,8 @@ def cmd_simulate(args) -> int:
 
     now = datetime.fromisoformat(args.at) if args.at else datetime.now().astimezone()
     rt = build(args.config, audit_name="simday", now=lambda: now)
-    simulate_day(rt, lender_id=args.lender, now=now, n=args.n, workers=args.workers)
+    simulate_day(rt, lender_id=args.lender, now=now, n=args.n, workers=args.workers,
+                 replan=args.replan)
     return 0
 
 
@@ -212,6 +213,7 @@ def main(argv=None) -> int:
     sm = sub.add_parser("simulate", help="plan the day and run N simulated conversations")
     sm.add_argument("--n", type=int, default=16)
     sm.add_argument("--workers", type=int, default=2)
+    sm.add_argument("--replan", action="store_true", help="plan again even if today has a plan")
     sm.add_argument("--at", help="fixed clock, e.g. 2026-11-11T10:00:00+05:30")
     sv = sub.add_parser("serve", help="dashboard + API")
     sv.add_argument("--host", default="127.0.0.1")

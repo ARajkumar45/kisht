@@ -25,7 +25,7 @@ from kisht.agent import Agent
 from kisht.evals import END, MAX_TURNS, _flip
 from kisht.guard import GuardRefused
 from kisht.languages import pack
-from kisht.planner import Planner
+from kisht.planner import PRIORITIES, PlanItem, Planner
 from kisht.ports import ModelUnavailable
 from kisht.review import Reviewer
 from kisht.runtime import Runtime
@@ -146,15 +146,35 @@ def pick(queue: list, ledger, n: int, languages: list[str]) -> list:
     return chosen[:n]
 
 
+def saved_queue(rt: Runtime, lender_id: str, today: date) -> list[PlanItem]:
+    """Today's plan as the planner saved it, so a second run does not plan again."""
+    rows = rt.ledger.db.execute(
+        "SELECT p.*, l.borrower_id FROM plans p JOIN loans l ON l.id = p.loan_id "
+        "WHERE p.plan_date=? AND p.status='queued' AND l.lender_id=?",
+        (today.isoformat(), lender_id)).fetchall()
+    items = [PlanItem(r["loan_id"], r["borrower_id"], r["priority"], r["channel"], r["reason"],
+                      r["approach"], rt.ledger.dues(r["loan_id"], today).days_past_due)
+             for r in rows]
+    items.sort(key=lambda p: (PRIORITIES.get(p.priority, 9), -p.days_past_due))
+    return items
+
+
 def simulate_day(rt: Runtime, *, lender_id: str, now: datetime, n: int = 16, workers: int = 2,
-                 seed: int = 11, log=print) -> list[dict[str, Any]]:
+                 seed: int = 11, replan: bool = False, log=print) -> list[dict[str, Any]]:
     today = now.date()
     guard = rt.guards[lender_id]
-    log(f"Planning {today} ...")
-    plan = Planner(guard, rt.models.for_role("planner")).plan(today)
-    log(f"Planner queued {len(plan.queue)} accounts ({len(plan.blocked)} blocked by contact "
-        f"rules) in {plan.seconds:.0f}s.")
-    chosen = pick(plan.queue, rt.ledger, n, list(guard.lender.languages.allowed))
+    queue = [] if replan else saved_queue(rt, lender_id, today)
+    if queue:
+        log(f"Using today's saved plan: {len(queue)} accounts queued.")
+    else:
+        log(f"Planning {today} ...")
+        plan = Planner(guard, rt.models.for_role("planner")).plan(today)
+        queue = plan.queue
+        log(f"Planner queued {len(queue)} accounts ({len(plan.blocked)} blocked by contact "
+            f"rules) in {plan.seconds:.0f}s.")
+    called = {c["loan_id"] for c in rt.insights.calls(limit=100_000)}
+    queue = [q for q in queue if q.loan_id not in called]       # one contact per account
+    chosen = pick(queue, rt.ledger, n, list(guard.lender.languages.allowed))
     rng = random.Random(seed)
     sits = situations(today)
     jobs = [(item, rng.choices(sits, [s.weight for s in sits])[0]) for item in chosen]

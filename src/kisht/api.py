@@ -131,8 +131,8 @@ def create_api(rt: Runtime) -> FastAPI:
                    "reviewed": len(reviews)},
             "blocked": dict(blocked),
             "speed": {
-                "median_turn_s": round(statistics.median(
-                    [t["seconds"] for t in turns if t["seconds"]]), 1) if turns else None,
+                "median_turn_s": round(statistics.median(secs), 1) if (secs := [
+                    t["seconds"] for t in turns if t["seconds"]]) else None,
                 "model_calls_per_turn": round(statistics.mean(
                     [t["model_calls"] or 0 for t in turns]), 2) if turns else None,
                 "cache_hit_pct": _pct(cached, prompt)},
