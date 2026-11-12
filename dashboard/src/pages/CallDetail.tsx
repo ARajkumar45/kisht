@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, type Span, type Turn } from "../api";
+import { api, type QAResult, type Review, type Span, type Turn } from "../api";
 import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, rupees, useLoad } from "../ui";
 
 export default function CallDetail() {
   const { id = "" } = useParams();
-  const { data, error } = useLoad(() => api.call(id), [id], 4000);
+  const { data, error, refresh } = useLoad(() => api.call(id), [id], 4000);
   if (!data) return <Page title="Call"><Loading error={error} /></Page>;
   const { call, turns, spans, review, actions } = data;
   return (
@@ -19,7 +19,7 @@ export default function CallDetail() {
           <Transcript turns={turns} />
         </Card>
         <div className="stack">
-          <Card title="Post-call review" right={review?.qa_score != null && <span className="score">QA {review.qa_score}</span>}>
+          <Card title="Post-call review" right={review?.final_score != null && <span className="score">QA {review.final_score}{review.human_reviewed && review.final_score !== review.qa_score ? <span className="muted small"> (AI said {review.qa_score})</span> : null}</span>}>
             {!review ? <div className="muted">{call.status === "live" ? "Reviewed when the call ends." : "Review pending…"}</div> : (
               <>
                 <p>{review.summary}</p>
@@ -28,13 +28,21 @@ export default function CallDetail() {
                   <Badge tone={review.sentiment === "distressed" || review.sentiment === "negative" ? "warn" : "neutral"}>Mood: {human(review.sentiment)}</Badge>
                 </div>
                 <ul className="qa">
-                  {review.qa.map((q) => (
-                    <li key={q.id} className={q.result}>
-                      <span className="qa-mark">{q.result === "pass" ? "✓" : q.result === "fail" ? "✗" : "–"}</span>
-                      <div><b>{q.check}</b>{q.evidence && <div className="muted small">{q.by === "code" ? "Code: " : ""}{q.evidence}</div>}</div>
-                    </li>
-                  ))}
+                  {review.qa.map((q) => {
+                    const shown = q.human?.result ?? q.result;
+                    return (
+                      <li key={q.id} className={shown}>
+                        <span className="qa-mark">{shown === "pass" ? "✓" : shown === "fail" ? "✗" : "–"}</span>
+                        <div>
+                          <b>{q.check}</b>
+                          {q.evidence && <div className="muted small">{q.by === "code" ? "Code: " : ""}{q.evidence}</div>}
+                          {q.human && q.human.result !== q.result && <div className="small warn-text">{q.human.by} changed this from {q.result} to {q.human.result}</div>}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
+                <HumanReview key={call.call_id} callId={call.call_id} review={review} onSaved={refresh} />
               </>
             )}
           </Card>
@@ -85,6 +93,7 @@ function Transcript({ turns }: { turns: Turn[] }) {
       {turns.map((t) => (
         <div key={t.idx}>
           {t.borrower && <div className="msg borrower">{t.borrower}</div>}
+          {t.coach && <div className="coach-line">Supervisor note to the AI: {t.coach}</div>}
           <div className="msg agent">
             {t.agent}
             {(t.tools.length > 0 || t.refused.length > 0 || t.replaced.length > 0) && (
@@ -98,6 +107,58 @@ function Transcript({ turns }: { turns: Turn[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** A human marks the same scorecard. Saved next to the AI's marks, never over them, so the
+ * Quality page can show how often the AI reviewer and a human agree. */
+function HumanReview({ callId, review, onSaved }: { callId: string; review: Review; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [by, setBy] = useState(review.qa.find((q) => q.human)?.human?.by ?? "");
+  const [marks, setMarks] = useState<Record<string, QAResult>>(() => Object.fromEntries(review.qa.map((q) => [q.id, q.human?.result ?? q.result])));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!open) {
+    return (
+      <div className="form-row">
+        <button className="secondary" onClick={() => setOpen(true)}>{review.human_reviewed ? "Edit the human review" : "Check this review"}</button>
+        {review.human_reviewed && <span className="muted small">Checked by {by || "a reviewer"}</span>}
+      </div>
+    );
+  }
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.humanQa(callId, marks, by.trim() || "reviewer");
+      setOpen(false);
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="human-qa">
+      <b>Your marks</b> <span className="muted small">start from the AI's; change the ones you disagree with</span>
+      {review.qa.filter((q) => q.by !== "code").map((q) => (
+        <div className="human-row" key={q.id}>
+          <span>{q.check}</span>
+          <span className="seg">
+            {(["pass", "fail", "na"] as QAResult[]).map((r) => (
+              <button key={r} type="button" className={marks[q.id] === r ? `on ${r}` : ""} onClick={() => setMarks({ ...marks, [q.id]: r })}>{r === "na" ? "n/a" : r}</button>
+            ))}
+          </span>
+        </div>
+      ))}
+      <div className="form-row">
+        <input placeholder="Your name" value={by} onChange={(e) => setBy(e.target.value)} />
+        <button disabled={busy} onClick={save}>{busy ? "Saving…" : "Save review"}</button>
+        <button className="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+      {err && <div className="error">{err}</div>}
     </div>
   );
 }

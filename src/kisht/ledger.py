@@ -280,6 +280,14 @@ class SqliteLedger:
                          call_id))
         return cid
 
+    def add_desk_note(self, *, lender_id: str, borrower_id: str, loan_id: str, note: str) -> str:
+        """What the human desk agreed with the borrower. Stored with the case notes, so the
+        agent reads it (after identity) the next time it talks to this borrower."""
+        cid = self.log_contact(lender_id=lender_id, borrower_id=borrower_id, loan_id=loan_id,
+                               channel="desk")
+        self.close_contact(cid, "desk_resolved", note[:500])
+        return cid
+
     def close_contact(self, contact_id: str, outcome: str, note: str) -> None:
         self.db.execute("UPDATE contacts SET outcome=?, note=? WHERE id=?",
                         (outcome, note, contact_id))

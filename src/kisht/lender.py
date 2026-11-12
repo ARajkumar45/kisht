@@ -95,7 +95,11 @@ class Lender(_Strict):
     banned_phrases: list[str]
     escalation_desk: str
     desk_teams: dict[str, str] = {}               # escalation reason -> human team
+    desk_sla_hours: dict[str, float] = {}         # escalation reason -> hours to resolve
     qa_scorecard: list[QAItem] = DEFAULT_SCORECARD
+
+    def sla_hours_for(self, reason: str) -> float:
+        return self.desk_sla_hours.get(reason, self.desk_sla_hours.get("default", 24))
 
     def team_for(self, reason: str) -> str:
         return self.desk_teams.get(reason, self.desk_teams.get("default", "Collections desk"))

@@ -1,5 +1,5 @@
 import { api } from "../api";
-import { Card, Loading, Page, human, useLoad } from "../ui";
+import { Badge, Card, CallLink, Loading, Page, Tile, human, useLoad } from "../ui";
 
 const QA_LABEL: Record<string, string> = {
   introduced: "Introduced self and lender", verified_first: "Verified identity first", explained_dues: "Explained dues clearly",
@@ -10,8 +10,9 @@ const QA_LABEL: Record<string, string> = {
 export default function Quality() {
   const { data, error } = useLoad(api.quality, []);
   if (!data) return <Page title="Quality"><Loading error={error} /></Page>;
+  const cal = data.calibration;
   return (
-    <Page title="Quality" sub="Two views of quality: the QA scorecard on real conversations, and the offline eval suite (simulated borrowers graded by code).">
+    <Page title="Quality" sub="Three views of quality: the QA scorecard on real conversations, how far the AI reviewer agrees with a human, and the offline eval suite (simulated borrowers graded by code).">
       <Card title="QA scorecard pass rate (all reviewed calls)">
         <div className="bars">
           {data.qa_items.map((q) => (
@@ -19,10 +20,39 @@ export default function Quality() {
               <div className="bar-label">{QA_LABEL[q.id] ?? human(q.id)}</div>
               <div className="bar-track"><div className={`bar-fill ${q.pass_rate != null && q.pass_rate < 70 ? "low" : ""}`} style={{ width: `${q.pass_rate ?? 0}%` }} /></div>
               <div className="bar-value">{q.pass_rate == null ? "n/a" : `${q.pass_rate}%`}<span className="muted small"> ({q.pass}/{q.pass + q.fail})</span></div>
+              {q.failing_calls.length > 0 && (
+                <div className="bar-foot muted small">Failed in: {q.failing_calls.map((id) => <CallLink key={id} id={id} />)}</div>
+              )}
             </div>
           ))}
           {!data.qa_items.length && <div className="muted">No reviewed calls yet.</div>}
         </div>
+      </Card>
+      <Card title="Can we trust the AI reviewer?" right={<span className="muted small">a human marks the same calls; this is how often they agree</span>}>
+        {!cal.items ? (
+          <div className="muted">No call has a human review yet. Open any call from the call log and use "Check this review" to mark it yourself.</div>
+        ) : (
+          <>
+            <div className="tiles three">
+              <Tile label="AI agrees with the human" value={`${cal.agreement_pct}%`} hint={`${cal.items} scorecard items`} tone={cal.agreement_pct != null && cal.agreement_pct >= 85 ? "good" : "warn"} />
+              <Tile label="Calls checked by a human" value={cal.calls} />
+              <Tile label="Disagreements" value={cal.disagreements.length} tone={cal.disagreements.length ? "warn" : "good"} />
+            </div>
+            {cal.disagreements.length > 0 && (
+              <table>
+                <thead><tr><th>Call</th><th>Scorecard item</th><th>AI said</th><th>Human said</th><th>Reviewer</th></tr></thead>
+                <tbody>
+                  {cal.disagreements.map((d, i) => (
+                    <tr key={i}>
+                      <td><CallLink id={d.call_id} /></td><td>{QA_LABEL[d.item] ?? human(d.item)}</td>
+                      <td><Badge>{d.ai}</Badge></td><td><Badge tone="warn">{d.human}</Badge></td><td>{d.by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
       </Card>
       <Card title="Eval runs">
         <table>

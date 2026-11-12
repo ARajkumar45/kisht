@@ -4,6 +4,15 @@ import { Badge, Card, CallLink, LANG, Loading, Page, human, rupees, time, useLoa
 
 const STATUS_TONE: Record<string, string> = { open: "bad", in_progress: "warn", resolved: "good" };
 
+const hours = (h: number) => (h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`);
+
+/** How the case stands against the team's deadline. The clock stops when it is resolved. */
+function Sla({ d }: { d: DeskItem }) {
+  if (d.status === "resolved") return <span className="muted small">resolved in {hours(d.age_hours)}{d.breached ? " (late)" : ""}</span>;
+  if (d.breached) return <Badge tone="bad">overdue by {hours(d.age_hours - d.sla_hours)}</Badge>;
+  return <span className="muted small">{hours(d.sla_hours - d.age_hours)} left of {hours(d.sla_hours)}</span>;
+}
+
 export default function Desk() {
   const { data, error, refresh } = useLoad(api.desk, [], 8000);
   const [sel, setSel] = useState<string | null>(null);
@@ -11,6 +20,7 @@ export default function Desk() {
   if (!data) return <Page title="Human desk"><Loading error={error} /></Page>;
   const teams = [...new Set(data.map((d) => d.team))];
   const shown = data.filter((d) => !team || d.team === team);
+  const late = data.filter((d) => d.breached && d.status !== "resolved").length;
   const current = data.find((d) => d.id === sel) ?? null;
   return (
     <Page title="Human desk" sub="Cases the AI handed over, routed to the right team. Open one for an AI brief, suggested replies and agreement answers.">
@@ -19,6 +29,7 @@ export default function Desk() {
           <option value="">All teams ({data.length})</option>
           {teams.map((t) => <option key={t} value={t}>{t} ({data.filter((d) => d.team === t).length})</option>)}
         </select>
+        {late > 0 && <Badge tone="bad">{late} past deadline</Badge>}
       </div>
       <div className="grid-2">
         <Card title="Queue">
@@ -30,7 +41,7 @@ export default function Desk() {
                   <b>{d.borrower_name}</b>
                   <Badge tone={STATUS_TONE[d.status]}>{human(d.status)}</Badge>
                 </div>
-                <div className="small">{human(d.reason)} · {d.team} · {LANG[d.language]}</div>
+                <div className="small">{human(d.reason)} · {d.team} · {LANG[d.language]} · <Sla d={d} /></div>
                 <div className="muted small clamp">{d.summary}</div>
               </li>
             ))}
@@ -68,6 +79,7 @@ function CaseView({ item, onChange }: { item: DeskItem; onChange: () => void }) 
           <span>EMI</span><b>{rupees(item.emi)}</b>
           <span>Language</span><b>{LANG[item.language]} · {item.city}</b>
           <span>Handed over</span><b>{time(item.created_utc)}</b>
+          <span>Deadline</span><b><Sla d={item} /></b>
           {item.call_id && <><span>Conversation</span><b><CallLink id={item.call_id}>open transcript and trace</CallLink></b></>}
         </div>
         <p><b>AI's hand-off note:</b> {item.summary}</p>
@@ -80,6 +92,7 @@ function CaseView({ item, onChange }: { item: DeskItem; onChange: () => void }) 
           <input placeholder="Resolution (what was agreed)" value={resolution} onChange={(e) => setResolution(e.target.value)} />
           <button disabled={busy || !resolution} onClick={() => run(async () => { await api.updateDesk(item.id, { status: "resolved", resolution }); onChange(); })}>Resolve</button>
         </div>
+        <p className="note">The resolution is saved with the borrower's case notes, so the AI knows what was agreed the next time it talks to them.</p>
         {err && <div className="error">{err}</div>}
       </Card>
       <Card title="Agent assist" right={<button disabled={busy} onClick={() => run(async () => setAssist(await api.assist(item.id)))}>{busy ? "Thinking…" : assist ? "Refresh" : "Brief me"}</button>}>

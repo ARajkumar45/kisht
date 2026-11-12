@@ -28,6 +28,7 @@ export default function Calls() {
           {Object.entries(LANG).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <label className="check"><input type="checkbox" checked={flagged} onChange={(e) => setFlagged(e.target.checked)} /> Only calls where code blocked something</label>
+        <a className="button secondary" href={api.callsCsv(params)} download>Export CSV</a>
       </div>
       <Card>
         {!data ? <Loading error={error} /> : (

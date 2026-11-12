@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE TABLE IF NOT EXISTS desk (
   escalation_id TEXT PRIMARY KEY, team TEXT NOT NULL, status TEXT NOT NULL,
   assignee TEXT, resolution TEXT, updated_utc TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS qa_labels (
+  call_id TEXT NOT NULL, item_id TEXT NOT NULL, result TEXT NOT NULL, by TEXT NOT NULL,
+  at_utc TEXT NOT NULL, PRIMARY KEY (call_id, item_id));
 """
 
 
@@ -65,6 +68,10 @@ class InsightsStore:
         self._local = threading.local()
         self._keepalive = self._connect()
         self._keepalive.executescript(SCHEMA)
+        try:                                    # added later: the supervisor's note per turn
+            self._keepalive.execute("ALTER TABLE turns ADD COLUMN coach TEXT")
+        except sqlite3.OperationalError:
+            pass
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._uri, uri=True, isolation_level=None, timeout=30,
@@ -96,17 +103,18 @@ class InsightsStore:
     def add_turn(self, call_id: str, *, borrower: str, agent: str, language: str | None = None,
                  tools: list[str] | None = None, refused: list[str] | None = None,
                  replaced: list[str] | None = None, seconds: float | None = None,
-                 model_calls: int = 0, prompt_tokens: int = 0, cached_tokens: int = 0) -> None:
+                 model_calls: int = 0, prompt_tokens: int = 0, cached_tokens: int = 0,
+                 coach: str | None = None) -> None:
         db = self.db
         db.execute("BEGIN IMMEDIATE")
         try:
             idx = db.execute("SELECT COUNT(*) FROM turns WHERE call_id=?",
                              (call_id,)).fetchone()[0]
-            db.execute("INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            db.execute("INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        (call_id, idx, _now(), language, borrower, agent,
                         json.dumps(tools or []), json.dumps(refused or []),
                         json.dumps(replaced or []), seconds, model_calls, prompt_tokens,
-                        cached_tokens))
+                        cached_tokens, coach))
             blocks = len(refused or []) + len(replaced or [])
             db.execute("UPDATE calls SET turns = turns + ?, blocks = blocks + ?, "
                        "language = COALESCE(?, language) WHERE call_id=?",
@@ -152,6 +160,18 @@ class InsightsStore:
         return [dict(r) for r in self.db.execute(
             "SELECT t.seconds, t.model_calls, t.prompt_tokens, t.cached_tokens FROM turns t "
             "JOIN calls c ON c.call_id = t.call_id WHERE t.borrower != '' AND c.status='ended'")]
+
+    def handle_seconds(self) -> list[float]:
+        """Handle time of each finished conversation: start to the last thing said. (Not to
+        ended_utc: a call that just went quiet is closed minutes later by the sweeper.)"""
+        out = []
+        for r in self.db.execute(
+                "SELECT c.started_utc AS a, MAX(t.at_utc) AS b, COUNT(*) AS n FROM calls c "
+                "JOIN turns t ON t.call_id = c.call_id WHERE c.status='ended' "
+                "GROUP BY c.call_id HAVING n > 1"):
+            out.append((datetime.fromisoformat(r["b"]) - datetime.fromisoformat(r["a"]))
+                       .total_seconds())
+        return out
 
     def call(self, call_id: str) -> dict[str, Any] | None:
         return _row(self.db.execute("SELECT * FROM calls WHERE call_id=?",
@@ -223,6 +243,19 @@ class InsightsStore:
         return [_row(r, ("qa", "compliance")) for r in self.db.execute(
             "SELECT r.*, c.language, c.outcome, c.started_utc FROM reviews r "
             "JOIN calls c ON c.call_id = r.call_id")]
+
+    # ---------- human QA labels (calibrating the AI reviewer) ----------
+
+    def set_qa_labels(self, call_id: str, labels: dict[str, str], by: str) -> None:
+        self.db.executemany("INSERT OR REPLACE INTO qa_labels VALUES (?,?,?,?,?)",
+                            [(call_id, item, result, by, _now()) for item, result in
+                             labels.items()])
+
+    def qa_labels(self, call_id: str | None = None) -> list[dict[str, Any]]:
+        sql, args = "SELECT * FROM qa_labels", []
+        if call_id:
+            sql, args = sql + " WHERE call_id=?", [call_id]
+        return [dict(r) for r in self.db.execute(sql + " ORDER BY at_utc", args)]
 
     # ---------- human desk ----------
 

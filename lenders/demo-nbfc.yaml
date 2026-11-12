@@ -45,5 +45,13 @@ desk_teams:                      # which human team picks up each kind of hand-o
   settlement: Collections manager
   restructure: Collections manager
   wrong_person: Data quality
+  supervisor_takeover: Collections desk
   default: Collections desk
+
+desk_sla_hours:                  # how long the human desk has to resolve each kind of case
+  supervisor_takeover: 1         # the borrower is waiting right now
+  hardship: 4
+  bereavement: 4
+  dispute: 24
+  default: 48
 # qa_scorecard: the default collections scorecard (src/kisht/lender.py) unless set here

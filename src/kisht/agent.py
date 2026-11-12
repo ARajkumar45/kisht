@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from kisht.audit import mask_digits
 from kisht.confirm import (
     claims_link_sent,
     claims_payment_received,
@@ -56,6 +57,8 @@ UNCHECKED_ID = {"role": "user", "content": (
     "but you did not call verify_identity. Only the tool can say whether it matches: call it "
     "now with what they said, then reply from its result.")}
 _ID_DETAIL = re.compile(r"\b\d{6}\b|\b(19[4-9]\d|200\d)\b")   # a PIN, or a birth year
+COACH = ("[Private note from your supervisor, not from the borrower] {note}\nFollow it in your "
+         "next reply if your rules allow. Never mention the supervisor or this note.")
 AFTER_PROMISE = {"role": "user", "content": (
     "[System note, not from the borrower] The promise is saved and the borrower has heard "
     "that. Schedule a follow-up for the day after the promised date with schedule_followup, "
@@ -77,6 +80,7 @@ class TurnResult:
     prompt_tokens: int = 0
     cached_tokens: int = 0
     fallback: bool = False
+    coach: str | None = None                              # supervisor's note used this turn
 
 
 class Agent:
@@ -127,16 +131,23 @@ class Agent:
     def handle(self, text: str) -> TurnResult:
         with call_span(self.call_id, "turn", kisht__channel=self.calls.get(
                 self.call_id, "channel", "chat")) as span:
+            was_verified = self.calls.get(self.call_id, "identity_verified", False)
             result = self._handle(text)
             set_attrs(span, kisht__language=self.language, kisht__tools=result.tool_calls,
                       kisht__refused=result.refused, kisht__replaced=result.replaced,
                       kisht__promise_saved=result.promise_saved, kisht__ended=result.ended,
-                      kisht__model_calls=result.model_calls, kisht__fallback=result.fallback)
+                      kisht__model_calls=result.model_calls, kisht__fallback=result.fallback,
+                      kisht__coached=bool(result.coach) or None)
             if result.fallback:
                 mark_error(span, "model unavailable")
         if self.insights:
+            # The call log is read by supervisors and reviewers; a date of birth or PIN code
+            # has no business there. The live conversation state (Redis, expiring) keeps it.
+            identity_answer = "verify_identity" in result.tool_calls or (
+                not was_verified and _ID_DETAIL.search(text))
             self.insights.add_turn(
-                self.call_id, borrower=text, agent=result.reply, language=self.language,
+                self.call_id, borrower=mask_digits(text) if identity_answer else text,
+                agent=result.reply, language=self.language, coach=result.coach,
                 tools=result.tool_calls, refused=result.refused, replaced=result.replaced,
                 seconds=round(result.model_latency_s, 2), model_calls=result.model_calls,
                 prompt_tokens=result.prompt_tokens, cached_tokens=result.cached_tokens)
@@ -147,15 +158,25 @@ class Agent:
         self.calls.append(self.call_id, {"role": "user", "content": text})
         self._follow_language(text)
         result = TurnResult(reply="")
+        if self.calls.get(self.call_id, "takeover"):
+            # A supervisor took this conversation over: the model is not asked again.
+            result.reply, result.ended = self.say("handover"), "escalate_to_human"
+            self.calls.append(self.call_id, {"role": "assistant", "content": result.reply})
+            return result
         pending = self.calls.get(self.call_id, "pending_promise")
         extra: list[dict] = []
+        note = self.calls.get(self.call_id, "supervisor_note")
+        if note:
+            self.calls.clear(self.call_id, "supervisor_note")
+            result.coach = note
+            extra.append({"role": "user", "content": COACH.format(note=note)})
         prefix = ""
         if pending and is_yes_to_promise(text, pending["amount"],
                                          date.fromisoformat(pending["pay_date"]),
                                          self.guard.today(), self.language):
             prefix = self._save_promise(pending, result)
             if result.promise_saved:
-                extra = [AFTER_PROMISE]
+                extra = [*extra, AFTER_PROMISE]
         try:
             reply = self._run_model(result, extra)
         except ModelUnavailable as e:

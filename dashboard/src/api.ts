@@ -34,6 +34,7 @@ export type Turn = {
   model_calls: number | null;
   prompt_tokens: number | null;
   cached_tokens: number | null;
+  coach: string | null;
 };
 
 export type Span = {
@@ -47,7 +48,8 @@ export type Span = {
   attrs: Record<string, unknown>;
 };
 
-export type QAItem = { id: string; check: string; result: "pass" | "fail" | "na"; evidence: string; by: string };
+export type QAResult = "pass" | "fail" | "na";
+export type QAItem = { id: string; check: string; result: QAResult; evidence: string; by: string; human: { result: QAResult; by: string } | null };
 export type Compliance = { rule: string; label: string; blocked: number; status: string };
 
 export type Review = {
@@ -59,6 +61,8 @@ export type Review = {
   compliance: Compliance[];
   model: string;
   seconds: number;
+  human_reviewed: boolean;
+  final_score: number | null;
 };
 
 export type CallDetail = {
@@ -76,7 +80,9 @@ export type Overview = {
   calls: number;
   live: number;
   ended: number;
-  rates: Record<"right_party_contact" | "promise" | "link_sent" | "escalated" | "opted_out", number | null>;
+  rates: Record<"right_party_contact" | "promise" | "link_sent" | "escalated" | "opted_out" | "containment", number | null>;
+  handle_time_s: number | null;
+  by_language: { language: string; calls: number; resolved_pct: number | null; escalated_pct: number | null; qa: number | null; blocked: number }[];
   money: { promises: number; promised_amount: number; links: number; link_amount: number };
   outcomes: Record<string, number>;
   escalations: Record<string, number>;
@@ -122,6 +128,9 @@ export type DeskItem = {
   city: string;
   emi: number;
   team: string;
+  age_hours: number;
+  sla_hours: number;
+  breached: boolean;
   status: "open" | "in_progress" | "resolved";
   assignee: string | null;
   resolution: string | null;
@@ -151,7 +160,17 @@ export type EvalRun = {
   by_category: Record<string, { personas: number; pass_1: number }>;
   median_turn_s: number;
 };
-export type Quality = { evals: EvalRun[]; qa_items: { id: string; pass: number; fail: number; na: number; pass_rate: number | null }[] };
+export type Calibration = {
+  calls: number;
+  items: number;
+  agreement_pct: number | null;
+  disagreements: { call_id: string; item: string; ai: QAResult; human: QAResult; by: string }[];
+};
+export type Quality = {
+  evals: EvalRun[];
+  qa_items: { id: string; pass: number; fail: number; na: number; pass_rate: number | null; failing_calls: string[] }[];
+  calibration: Calibration;
+};
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -173,6 +192,10 @@ export const api = {
   plan: () => call<{ date: string | null; items: PlanItem[]; counts: Record<string, number> }>("/api/plan"),
   calls: (params: Record<string, string>) => call<Call[]>("/api/calls?" + new URLSearchParams(params)),
   call: (id: string) => call<CallDetail>(`/api/calls/${id}`),
+  callsCsv: (params: Record<string, string>) => "/api/export/calls.csv?" + new URLSearchParams(params),
+  coach: (id: string, note: string, by: string) => post<{ queued: boolean }>(`/api/calls/${id}/coach`, { note, by }),
+  takeOver: (id: string, note: string, by: string) => post<{ escalation_id: string }>(`/api/calls/${id}/takeover`, { note, by }),
+  humanQa: (id: string, labels: Record<string, QAResult>, by: string) => post<Review>(`/api/calls/${id}/qa`, { labels, by }),
   live: () => call<Live>("/api/live"),
   desk: () => call<DeskItem[]>("/api/desk"),
   updateDesk: (id: string, body: Partial<Pick<DeskItem, "status" | "assignee" | "resolution">>) =>

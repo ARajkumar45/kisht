@@ -44,6 +44,8 @@ PACK = LanguagePack(
         "fallback": "Maaf kijiye, abhi technical dikkat hai. Hamari team aapse sampark karegi. "
                     "Dhanyavaad.",
         "stuck": "Maaf kijiye, main yeh nahi kar paayi. Kya main team se aapko call karwaun?",
+        "handover": "Main aapko hamari team ke ek saathi se jod rahi hoon, aage ki baat wahi "
+                    "karenge. Dhanyavaad.",
         "verify_first": "Kuch bhi details batane se pehle, kya aap apni date of birth ya PIN code "
                         "bata sakte hain?",
         "cannot_decide": "Yeh main khud decide nahi kar sakti, lekin aapki baat team tak pahuncha "

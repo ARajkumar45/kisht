@@ -24,6 +24,11 @@ def mask_phone(text: str) -> str:
     return _PHONE.sub(_mask, text)
 
 
+def mask_digits(text: str) -> str:
+    """'2 April 1990' -> '• April ••••'. For identity answers (date of birth, PIN code)."""
+    return re.sub(r"\d", "•", text)
+
+
 def _redact(value: Any) -> Any:
     if isinstance(value, str):
         return mask_phone(value)

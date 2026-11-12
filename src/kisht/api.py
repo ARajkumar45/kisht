@@ -13,22 +13,28 @@ system and a human desk action is as audited as an agent action.
     POST /api/assist/ask          answer a question from the loan agreement, with sections
     GET  /api/borrowers           synthetic borrowers, to start a chat
     POST /api/chat/start | /api/chat/{id}/say | /api/chat/{id}/end   test chat as a borrower
-    GET  /api/quality             eval results and per-item QA pass rates
+    GET  /api/quality             eval results, per-item QA pass rates, AI-vs-human agreement
+    POST /api/calls/{id}/coach    supervisor: a private note for the agent's next reply
+    POST /api/calls/{id}/takeover supervisor: stop the AI, hand the case to the human desk
+    POST /api/calls/{id}/qa       a human's own QA marks for a call (calibrates the AI reviewer)
+    GET  /api/export/calls.csv    the call log as a spreadsheet (same filters as /api/calls)
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
 import statistics
 import threading
 from collections import Counter
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -48,6 +54,16 @@ class DeskUpdate(BaseModel):
     status: str | None = None          # open | in_progress | resolved
     assignee: str | None = None
     resolution: str | None = None
+
+
+class Coach(BaseModel):
+    note: str = ""
+    by: str = "supervisor"
+
+
+class HumanQA(BaseModel):
+    labels: dict[str, str]             # scorecard item id -> pass | fail | na
+    by: str = "reviewer"
 
 
 class Ask(BaseModel):
@@ -111,6 +127,19 @@ def create_api(rt: Runtime) -> FastAPI:
             for c in r["compliance"]:
                 blocked[c["label"]] += c["blocked"]
         qa_scores = [r["qa_score"] for r in reviews if r["qa_score"] is not None]
+        handle = rt.insights.handle_seconds()
+        qa_by_call = {r["call_id"]: r["qa_score"] for r in reviews}
+        by_language = []
+        for lang in sorted({c["language"] for c in ended if c["language"]}):
+            mine = [c for c in ended if c["language"] == lang]
+            kinds = Counter((c["outcome"] or "").split(":")[0] for c in mine)
+            scores = [s for c in mine if (s := qa_by_call.get(c["call_id"])) is not None]
+            by_language.append({
+                "language": lang, "calls": len(mine),
+                "resolved_pct": _pct(kinds["promise"] + kinds["link_sent"], len(mine)),
+                "escalated_pct": _pct(kinds["escalated"], len(mine)),
+                "qa": round(statistics.mean(scores), 1) if scores else None,
+                "blocked": sum(c["blocks"] for c in mine)})
         promises = rt.ledger.db.execute(
             "SELECT COUNT(*), COALESCE(SUM(amount),0) FROM promises").fetchone()
         links = rt.ledger.db.execute(
@@ -123,7 +152,12 @@ def create_api(rt: Runtime) -> FastAPI:
                 "link_sent": _pct(outcomes["link_sent"], len(ended)),
                 "escalated": _pct(outcomes["escalated"], len(ended)),
                 "opted_out": _pct(outcomes["opted_out"], len(ended)),
+                # Containment: of the borrowers we really reached, how many the AI handled
+                # to the end without a human.
+                "containment": _pct(reached - (outcomes["escalated"] - wrong), reached),
             },
+            "handle_time_s": round(statistics.median(handle)) if handle else None,
+            "by_language": by_language,
             "money": {"promises": promises[0], "promised_amount": promises[1],
                       "links": links[0], "link_amount": links[1]},
             "outcomes": dict(outcomes), "escalations": dict(escalated),
@@ -175,6 +209,73 @@ def create_api(rt: Runtime) -> FastAPI:
         return rt.insights.calls(status=status, outcome=outcome, language=language,
                                  flagged=flagged, q=q)
 
+    @app.get("/api/export/calls.csv")
+    def calls_csv(status: str | None = None, outcome: str | None = None,
+                  language: str | None = None, flagged: bool = False, q: str | None = None
+                  ) -> Response:
+        cols = ["call_id", "started_utc", "ended_utc", "borrower_name", "loan_id", "channel",
+                "language", "status", "outcome", "turns", "blocks", "reason", "sentiment",
+                "qa_score", "source", "note"]
+        buf = io.StringIO()
+        out = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+        out.writeheader()
+        out.writerows(rt.insights.calls(status=status, outcome=outcome, language=language,
+                                        flagged=flagged, q=q, limit=10_000))
+        return Response(buf.getvalue(), media_type="text/csv", headers={
+            "Content-Disposition": 'attachment; filename="kisht-calls.csv"'})
+
+    def _review_with_humans(call_id: str) -> dict[str, Any] | None:
+        review = rt.insights.review(call_id)
+        if not review:
+            return None
+        human = {x["item_id"]: x for x in rt.insights.qa_labels(call_id)}
+        for q in review["qa"]:
+            h = human.get(q["id"])
+            q["human"] = {"result": h["result"], "by": h["by"]} if h else None
+        final = [(q["human"] or q)["result"] for q in review["qa"]]
+        scored = [r for r in final if r != "na"]
+        review["human_reviewed"] = bool(human)
+        review["final_score"] = (round(100 * scored.count("pass") / len(scored), 1)
+                                 if scored and human else review["qa_score"])
+        return review
+
+    def _live_guard(call_id: str):
+        c = rt.insights.call(call_id)
+        if not c:
+            raise HTTPException(404, "no such call")
+        if c["status"] != "live" or not rt.calls.exists(call_id):
+            raise HTTPException(409, "this conversation is no longer live")
+        return rt.guards[c["lender_id"]]
+
+    @app.post("/api/calls/{call_id}/coach")
+    def coach(call_id: str, body: Coach) -> dict[str, Any]:
+        try:
+            return _live_guard(call_id).coach(call_id, by=body.by, note=body.note)
+        except GuardRefused as e:
+            raise HTTPException(409, f"{e.code}: {e.message}") from e
+
+    @app.post("/api/calls/{call_id}/takeover")
+    def takeover(call_id: str, body: Coach) -> dict[str, Any]:
+        try:
+            return _live_guard(call_id).take_over(call_id, by=body.by, note=body.note)
+        except GuardRefused as e:
+            raise HTTPException(409, f"{e.code}: {e.message}") from e
+
+    @app.post("/api/calls/{call_id}/qa")
+    def human_qa(call_id: str, body: HumanQA) -> dict[str, Any]:
+        review = rt.insights.review(call_id)
+        if not review:
+            raise HTTPException(409, "this call has no review yet")
+        known = {q["id"] for q in review["qa"]}
+        bad = [k for k, v in body.labels.items() if k not in known or v not in
+               ("pass", "fail", "na")]
+        if bad or not body.labels:
+            raise HTTPException(400, f"unknown item or result: {', '.join(bad) or 'none given'}")
+        rt.insights.set_qa_labels(call_id, body.labels, body.by[:60] or "reviewer")
+        rt.audit.record(call_id=call_id, tenant_id="qa", action="human_qa_review",
+                        args={"by": body.by, "items": len(body.labels)}, outcome="ok")
+        return _review_with_humans(call_id)
+
     @app.get("/api/calls/{call_id}")
     def call(call_id: str) -> dict[str, Any]:
         c = rt.insights.call(call_id)
@@ -186,7 +287,7 @@ def create_api(rt: Runtime) -> FastAPI:
             return [dict(r) for r in led.execute(f"SELECT * FROM {table} WHERE call_id=?",
                                                  (call_id,))]
         return {"call": c, "turns": rt.insights.turns(call_id),
-                "spans": rt.insights.spans(call_id), "review": rt.insights.review(call_id),
+                "spans": rt.insights.spans(call_id), "review": _review_with_humans(call_id),
                 "actions": {"promises": rows("promises"), "links": rows("payment_links"),
                             "escalations": rows("escalations"), "followups": rows("followups")},
                 "audit": entries_for_call(rt.cfg.stores.audit_dir, call_id)
@@ -223,10 +324,17 @@ def create_api(rt: Runtime) -> FastAPI:
         lender = rt.lenders.get(loan["lender_id"])
         state = rt.insights.desk_state(e["id"]) or {}
         review = rt.insights.review(e["call_id"]) if e.get("call_id") else None
+        status = state.get("status") or "open"
+        # The clock stops when the case is resolved.
+        until = (datetime.fromisoformat(state["updated_utc"]) if status == "resolved"
+                 else datetime.now(UTC))
+        age_h = (until - datetime.fromisoformat(e["created_utc"])).total_seconds() / 3600
+        sla_h = lender.sla_hours_for(e["reason"])
         return {**e, "borrower_id": b["id"], "borrower_name": b["name"],
+                "age_hours": round(age_h, 1), "sla_hours": sla_h, "breached": age_h > sla_h,
                 "language": b["language"], "city": b["city"], "emi": loan["emi"],
                 "team": state.get("team") or lender.team_for(e["reason"]),
-                "status": state.get("status") or "open", "assignee": state.get("assignee"),
+                "status": status, "assignee": state.get("assignee"),
                 "resolution": state.get("resolution"),
                 "review": {"summary": review["summary"], "sentiment": review["sentiment"]}
                 if review else None}
@@ -234,7 +342,10 @@ def create_api(rt: Runtime) -> FastAPI:
     @app.get("/api/desk")
     def desk() -> list[dict[str, Any]]:
         rows = rt.ledger.db.execute("SELECT * FROM escalations ORDER BY created_utc DESC")
-        return [_desk_item(dict(r)) for r in rows]
+        items = [_desk_item(dict(r)) for r in rows]
+        # Unresolved first; within those, the case closest to (or furthest past) its deadline.
+        items.sort(key=lambda d: (d["status"] == "resolved", d["sla_hours"] - d["age_hours"]))
+        return items
 
     def _escalation(eid: str) -> dict:
         row = rt.ledger.db.execute("SELECT * FROM escalations WHERE id=?", (eid,)).fetchone()
@@ -251,6 +362,14 @@ def create_api(rt: Runtime) -> FastAPI:
         rt.insights.set_desk(eid, team=item["team"], status=status,
                              assignee=body.assignee or item["assignee"],
                              resolution=body.resolution or item["resolution"])
+        if status == "resolved" and item["status"] != "resolved" and body.resolution:
+            # Close the loop: the agent reads this the next time it talks to the borrower.
+            loan = rt.ledger.loan(item["loan_id"])
+            who = body.assignee or item["assignee"] or item["team"]
+            rt.ledger.add_desk_note(
+                lender_id=loan["lender_id"], borrower_id=item["borrower_id"],
+                loan_id=item["loan_id"],
+                note=f"Human desk ({who}) resolved the {item['reason']} case: {body.resolution}")
         rt.audit.record(call_id=item.get("call_id"), tenant_id="desk", action="desk_update",
                         args={"escalation_id": eid, "status": status,
                               "assignee": body.assignee}, outcome="ok")
@@ -369,14 +488,35 @@ def create_api(rt: Runtime) -> FastAPI:
             except (OSError, json.JSONDecodeError):
                 continue
             evals.append({"run": f.parent.name, **data})
+        reviews = rt.insights.reviews()
         items: dict[str, Counter] = {}
-        for r in rt.insights.reviews():
+        for r in reviews:
             for q in r["qa"]:
                 items.setdefault(q["id"], Counter())[q["result"]] += 1
+        failing: dict[str, list[str]] = {}
+        ai: dict[tuple[str, str], dict] = {}
+        for r in sorted(reviews, key=lambda r: r["started_utc"], reverse=True):
+            for q in r["qa"]:
+                ai[(r["call_id"], q["id"])] = q
+                if q["result"] == "fail":
+                    failing.setdefault(q["id"], []).append(r["call_id"])
         qa_items = [{"id": k, "pass": v["pass"], "fail": v["fail"], "na": v["na"],
-                     "pass_rate": _pct(v["pass"], v["pass"] + v["fail"])}
+                     "pass_rate": _pct(v["pass"], v["pass"] + v["fail"]),
+                     "failing_calls": failing.get(k, [])[:5]}
                     for k, v in items.items()]
-        return {"evals": evals, "qa_items": qa_items}
+        # Calibration: a human marked the same items. Only items the model judged count
+        # (the code-checked item cannot disagree with itself).
+        pairs = [(lab, ai[(lab["call_id"], lab["item_id"])]) for lab in rt.insights.qa_labels()
+                 if (lab["call_id"], lab["item_id"]) in ai
+                 and ai[(lab["call_id"], lab["item_id"])].get("by") == "model"]
+        agree = sum(1 for lab, q in pairs if lab["result"] == q["result"])
+        calibration = {
+            "calls": len({lab["call_id"] for lab, _ in pairs}), "items": len(pairs),
+            "agreement_pct": _pct(agree, len(pairs)),
+            "disagreements": [{"call_id": lab["call_id"], "item": lab["item_id"],
+                               "ai": q["result"], "human": lab["result"], "by": lab["by"]}
+                              for lab, q in pairs if lab["result"] != q["result"]][:30]}
+        return {"evals": evals, "qa_items": qa_items, "calibration": calibration}
 
     # ---------- the dashboard itself ----------
 

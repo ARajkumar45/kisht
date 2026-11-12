@@ -1,4 +1,5 @@
-import { api } from "../api";
+import { useState } from "react";
+import { api, type Call } from "../api";
 import { Badge, Card, CallLink, LANG, Loading, Page, human, time, useLoad } from "../ui";
 
 const ALERT: Record<string, string> = {
@@ -13,11 +14,43 @@ const ALERT: Record<string, string> = {
   identity_locked: "Identity locked after 3 tries",
 };
 
+/** Supervisor controls for one live conversation. Both go through the guard and the audit log. */
+function Controls({ call, onDone }: { call: Call; onDone: () => void }) {
+  const [note, setNote] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const by = "Supervisor";
+  const run = async (f: () => Promise<unknown>, ok: string) => {
+    setBusy(true);
+    try {
+      await f();
+      setMsg(ok);
+      setNote("");
+      onDone();
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if ((call.outcome ?? "").startsWith("escalated")) return null;
+  return (
+    <div className="controls">
+      <div className="form-row">
+        <input placeholder="Private note to the AI, e.g. offer a part payment" value={note} onChange={(e) => setNote(e.target.value)} />
+        <button className="secondary" disabled={busy || !note.trim()} onClick={() => run(() => api.coach(call.call_id, note, by), "Note queued for the AI's next reply.")}>Coach</button>
+        <button className="danger" disabled={busy} onClick={() => { if (window.confirm("Stop the AI and hand this conversation to the human desk?")) run(() => api.takeOver(call.call_id, note, by), "Taken over. The case is on the human desk."); }}>Take over</button>
+      </div>
+      {msg && <div className="muted small">{msg}</div>}
+    </div>
+  );
+}
+
 export default function Live() {
-  const { data, error } = useLoad(api.live, [], 2500);
+  const { data, error, refresh } = useLoad(api.live, [], 2500);
   if (!data) return <Page title="Live"><Loading error={error} /></Page>;
   return (
-    <Page title="Live" sub="Supervisor view: conversations happening now and every alert, updated every few seconds.">
+    <Page title="Live" sub="Supervisor view: conversations happening now and every alert. Coach the AI with a private note, or take a conversation over.">
       <div className="grid-2">
         <Card title={`Live conversations (${data.live.length})`}>
           {!data.live.length && <div className="muted">No conversation is live. Start one from Test chat, or run <code>uv run kisht simulate</code>.</div>}
@@ -32,9 +65,11 @@ export default function Live() {
               {c.last_turns.map((t) => (
                 <div key={t.idx} className="live-turn">
                   {t.borrower && <div><span className="who">Borrower</span> {t.borrower}</div>}
+                  {t.coach && <div className="coach-line">Supervisor note: {t.coach}</div>}
                   <div><span className="who">Agent</span> {t.agent}</div>
                 </div>
               ))}
+              <Controls call={c} onDone={refresh} />
             </div>
           ))}
         </Card>

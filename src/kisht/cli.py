@@ -213,9 +213,14 @@ def cmd_serve(args) -> int:
 
     from kisht.api import create_api
 
-    rt = build(args.config, audit_name="dashboard")
+    now = None
+    if args.at:                       # demo clock: test chat works outside the calling window
+        fixed = datetime.fromisoformat(args.at)
+        now = lambda: fixed
+    rt = build(args.config, audit_name="dashboard", now=now)
     _sweeper(rt)
-    print(f"Kisht dashboard: http://{args.host}:{args.port}")
+    print(f"Kisht dashboard: http://{args.host}:{args.port}"
+          + (f"  (clock fixed at {args.at})" if args.at else ""))
     uvicorn.run(create_api(rt), host=args.host, port=args.port, log_level="warning")
     return 0
 
@@ -247,6 +252,7 @@ def main(argv=None) -> int:
     sv = sub.add_parser("serve", help="dashboard + API")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--at", help="fixed clock for demos, e.g. 2026-11-12T11:00:00+05:30")
     args = p.parse_args(argv)
     return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat, "plan": cmd_plan,
             "bridge": cmd_bridge, "simulate": cmd_simulate, "review": cmd_review,

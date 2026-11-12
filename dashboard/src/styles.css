@@ -148,6 +148,23 @@ button.secondary { background: #fff; color: var(--brand); }
 .alerts li.warn { border-left-color: #e3a008; background: #fffbf0; }
 .alert-head { display: flex; justify-content: space-between; gap: 8px; }
 
+.controls { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 2px; }
+.coach-line { font-size: 12px; color: var(--warn); background: var(--warn-soft); border-radius: 6px; padding: 3px 8px; margin: 3px 0; width: fit-content; }
+button.danger { background: #fff; color: var(--bad); border-color: var(--bad); }
+a.button { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--brand); white-space: nowrap; }
+a.button:hover { text-decoration: none; background: var(--brand-soft); }
+.tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bar-foot { grid-column: 2 / -1; display: flex; gap: 8px; flex-wrap: wrap; margin-top: -3px; }
+.human-qa { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.human-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+.seg { display: inline-flex; flex-shrink: 0; }
+.seg button { background: #fff; color: var(--muted); border-color: var(--line); border-radius: 0; padding: 3px 10px; font-size: 12px; margin-left: -1px; }
+.seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 6px 6px 0; }
+.seg button.on.pass { background: var(--good-soft); color: var(--good); border-color: var(--good); position: relative; }
+.seg button.on.fail { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); position: relative; }
+.seg button.on.na { background: #eef1f6; color: var(--ink); border-color: var(--muted); position: relative; }
+
 /* desk */
 .queue, .people { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; max-height: 640px; overflow: auto; }
 .queue li, .people li { border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; cursor: pointer; }

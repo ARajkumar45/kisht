@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from kisht.audit import AuditLog
+from kisht.audit import AuditLog, mask_digits
 from kisht.languages import date_words
 from kisht.ledger import PromiseLimit, SqliteLedger
 from kisht.lender import Lender
@@ -45,6 +45,14 @@ class GuardRefused(Exception):
         self.message = message
 
 
+def _safe(action: str, args: dict[str, Any]) -> dict[str, Any]:
+    """The audit trail says identity was checked, never with what: a date of birth or PIN
+    code written to a log file is a leak waiting to happen."""
+    if action != "verify_identity":
+        return args
+    return {k: mask_digits(str(v)) if v else v for k, v in args.items()}
+
+
 def _audited(action: str):
     def wrap(fn):
         @functools.wraps(fn)
@@ -53,10 +61,11 @@ def _audited(action: str):
                 result = fn(self, call_id, *args, **kwargs)
             except GuardRefused as e:
                 self.audit.record(call_id=call_id, tenant_id=self.lender.id, action=action,
-                                  args=kwargs, outcome="denied", detail=f"{e.code}: {e.message}")
+                                  args=_safe(action, kwargs), outcome="denied",
+                                  detail=f"{e.code}: {e.message}")
                 raise
             self.audit.record(call_id=call_id, tenant_id=self.lender.id, action=action,
-                              args=kwargs, outcome="ok")
+                              args=_safe(action, kwargs), outcome="ok")
             return result
         return inner
     return wrap
@@ -97,7 +106,8 @@ class PolicyGuard:
             raise GuardRefused("dnd", "number is on DND: no calls, chat only")
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_ago = now - timedelta(days=7)
-        recent = self.ledger.contacts_since(borrower_id, week_ago.isoformat())
+        recent = [c for c in self.ledger.contacts_since(borrower_id, week_ago.isoformat())
+                  if c["channel"] != "desk"]          # a desk note is not a contact attempt
         today_n = sum(1 for c in recent
                       if datetime.fromisoformat(c["started_utc"]) >= start_of_day)
         if today_n >= self.lender.contact.max_attempts_per_day:
@@ -305,6 +315,31 @@ class PolicyGuard:
                                          call_id=call_id)
         self.calls.set_state(call_id, escalated=reason)
         return {"escalation_id": eid, "desk": self.lender.escalation_desk}
+
+    # ---------- supervisor (a human watching the live view) ----------
+
+    @_audited("supervisor_coach")
+    def coach(self, call_id: str, *, by: str, note: str) -> dict[str, Any]:
+        """A private note for the agent's next reply. It is guidance, not a bypass: the reply
+        still passes every check, and tools still pass every rule."""
+        self._bound(call_id)
+        note = " ".join((note or "").split())[:300]
+        if not note:
+            raise GuardRefused("empty_note", "write a note for the agent")
+        self.calls.set_state(call_id, supervisor_note=note, supervisor=by[:60])
+        return {"queued": True}
+
+    @_audited("supervisor_take_over")
+    def take_over(self, call_id: str, *, by: str, note: str = "") -> dict[str, Any]:
+        """The AI stops; the case goes to the human desk with the supervisor's reason."""
+        _, loan_id = self._bound(call_id)
+        if self.calls.get(call_id, "escalated"):
+            raise GuardRefused("already_escalated", "this conversation is already with a human")
+        summary = f"Supervisor {by[:60]} took the conversation over. {note}".strip()[:600]
+        eid = self.ledger.add_escalation(loan_id=loan_id, reason="supervisor_takeover",
+                                         summary=summary, call_id=call_id)
+        self.calls.set_state(call_id, escalated="supervisor_takeover", takeover=True)
+        return {"escalation_id": eid}
 
     @_audited("opt_out")
     def opt_out(self, call_id: str) -> dict[str, Any]:

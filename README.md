@@ -131,13 +131,14 @@ React + TypeScript dashboard (`dashboard/`) served by `kisht serve`:
 | Part | What it does here |
 |---|---|
 | Today's plan | The planner agent's queue for the day: who, which channel, and why in its own words, plus what each contact led to. |
-| Call log | Every conversation, searchable, filterable by outcome, language, and "code blocked something". |
+| Call log | Every conversation, searchable, filterable by outcome, language, and "code blocked something"; exports to CSV. A date of birth or PIN code the borrower gives is masked before it reaches the log or the audit trail. |
 | Call trace | Each call as an OpenTelemetry trace: every turn, model call (tokens, cache, queue wait), tool call and reply check, with timings. Blocked steps show in red. |
 | Post-call QA | Every call is scored on the lender's QA scorecard by a reviewer model, with evidence. Contact centres usually score about 2% of calls by hand. |
-| Analytics | Why borrowers are not paying, their mood, outcomes, right-person contact rate, promise and link rates, money promised. |
+| QA calibration | A human can mark the same scorecard on any call. Their marks are stored next to the AI's, never over them, and the Quality page shows how often the two agree and where they differ. Each scorecard item links to the calls that failed it. |
+| Analytics | Why borrowers are not paying, their mood, outcomes, right-person contact rate, promise and link rates, money promised, containment (handled without a human), conversation length, and a per-language table. |
 | Compliance | Counted by code, not judged by a model: threats, leaks before identity, false claims and out-of-policy actions the guard stopped. |
-| Live view | Supervisor screen: conversations in progress and a feed of alerts. |
-| Human desk | Hand-offs routed to teams (hardship, disputes, collections manager) by rules in the lender YAML; take, resolve, all audited. |
+| Live view | Supervisor screen: conversations in progress and a feed of alerts. The supervisor can coach the AI with a private note for its next reply, or take the conversation over, which stops the AI and puts the case on the human desk. Both go through the guard and the audit log, and work across processes (a voice call on the bridge, coached from the dashboard). A note is guidance only: the reply still passes every check. |
+| Human desk | Hand-offs routed to teams (hardship, disputes, collections manager) by rules in the lender YAML, each with a deadline (`desk_sla_hours`); the queue shows the most urgent first and flags late cases. Take, resolve, all audited. The resolution is saved with the borrower's case notes, so the AI knows what a human agreed the next time it talks to them. |
 | Agent assist | For a human picking up a case: an AI brief, next best action, suggested replies in the borrower's language, and answers from the loan agreement with section numbers. |
 | Test chat | A phone-style chat window to be the borrower against the real agent. |
 
@@ -166,6 +167,7 @@ uv run kisht simulate --n 20        # plan today, 20 simulated conversations, ea
 uv run kisht review                 # review any call not yet reviewed (--all: review again)
 cd dashboard && npm install && npm run build && cd ..
 uv run kisht serve                  # http://127.0.0.1:8000
+uv run kisht serve --at 2026-11-12T11:00:00+05:30   # fixed clock: test chat outside 08:00-19:00
 ```
 
 A conversation is wrapped up the same way whoever ended it: a case note for next time, the

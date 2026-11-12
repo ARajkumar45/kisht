@@ -36,6 +36,8 @@ PACK = LanguagePack(
         "read_back": "So you will pay {read_back}. Is that right?",
         "fallback": "Sorry, I'm having a technical problem. Our team will contact you. Thank you.",
         "stuck": "Sorry, I couldn't sort that out. Shall I ask our team to call you?",
+        "handover": "I'm connecting you with a colleague from our team, who will take it "
+                    "from here. Thank you.",
         "verify_first": "Before I can discuss any details, may I have your date of birth or PIN "
                         "code?",
         "cannot_decide": "I can't decide that myself, but I can pass it to our team with your "
