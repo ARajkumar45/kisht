@@ -142,7 +142,7 @@ React + TypeScript dashboard (`dashboard/`) served by `kisht serve`:
 | Agent assist | For a human picking up a case: an AI brief, next best action, suggested replies in the borrower's language, and answers from the loan agreement with section numbers. |
 | Test chat | A phone-style chat window to be the borrower against the real agent. |
 
-![Overview: 25 simulated conversations in Hindi, Tamil, English and Telugu](docs/img/overview.jpg)
+![Overview: simulated and test conversations in Hindi, Tamil, English and Telugu](docs/img/overview.jpg)
 
 A call with its post-call QA review, and its trace. The red "Reply check" is where the model
 claimed the promise was saved before the borrower agreed; code replaced it with the read-back.
@@ -154,6 +154,22 @@ The same agent in Tamil, and the human desk with agent assist on a hardship hand
 
 ![Tamil conversation](docs/img/call-tamil.jpg)
 ![Human desk with agent assist](docs/img/desk.jpg)
+
+The supervisor's live view. The supervisor's private note is shown above the reply it shaped;
+the borrower's date of birth is already masked. "Take over" stops the AI and puts the case on
+the human desk:
+
+![Live view with coach and take over](docs/img/live.jpg)
+
+The desk queue with deadlines, most urgent first; here the taken-over case is past its
+one-hour deadline:
+
+![Human desk queue with deadlines](docs/img/desk-queue.jpg)
+
+A human checking the AI reviewer's marks on one call. Their marks start from the AI's and are
+saved beside them, so agreement can be measured:
+
+![Human QA check](docs/img/qa-check.jpg)
 
 The planner's queue for the day, with its reasons and what each contact led to:
 
