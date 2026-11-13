@@ -19,13 +19,16 @@ PACK = LanguagePack(
         "january", "february", "march", "april", "may", "june", "july", "august",
         "september", "october", "november", "december"]),
     promise_saved=((r"\b(promise (is |has been )?(noted|recorded|saved|registered)|(i'?ve|i have) "
-                   r"(noted|recorded|saved)|confirmation received)\b"),),
+                   r"(noted|recorded|saved)|confirmation received|"
+                    r"(noted|recorded|saved|registered) (your|the|this) promise)\b"),),
     link_sent=(r"link\b.{0,40}\bsent\b", r"\b(sent|sending)\b.{0,40}\blink\b",
                r"\b(i'?ll|i will|let me) send (you )?(a |the )?(payment )?link"),
     waiver=((r"\b(waived?|settled?|settlement (is|has been) (done|approved)|penalty (is |has been )?"
             r"(removed|cancelled)|charges? (removed|cancelled)|restructured?)\b"),),
     negation=(r"\b(cannot|can't|can not|not able|unable)\b",),
     paid=(r"\b(payment (is |has been )?received|we('ve| have) received your payment)\b",),
+    action_words=((r"\b(record|note|save|promis|link|send|sent|schedul|follow|call ?back|verif|"
+                  r"confirm|waiv|settl|escalat|register|team|opt(ed)? out|paid|received)"),),
     stall=(r"let me (check|see|look)|one moment|please hold|hold on",
            r"\b(i'll|i will|let me) (note|record|save) (it|that|this|your promise)"),
     possessive=F({"your"}),
@@ -36,6 +39,7 @@ PACK = LanguagePack(
         "read_back": "So you will pay {read_back}. Is that right?",
         "fallback": "Sorry, I'm having a technical problem. Our team will contact you. Thank you.",
         "stuck": "Sorry, I couldn't sort that out. Shall I ask our team to call you?",
+        "moment": "One moment, please.",
         "handover": "I'm connecting you with a colleague from our team, who will take it "
                     "from here. Thank you.",
         "verify_first": "Before I can discuss any details, may I have your date of birth or PIN "

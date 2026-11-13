@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS calls (
   ended_utc TEXT, status TEXT NOT NULL DEFAULT 'live', outcome TEXT, note TEXT,
   turns INTEGER NOT NULL DEFAULT 0, blocks INTEGER NOT NULL DEFAULT 0, source TEXT);
 CREATE INDEX IF NOT EXISTS calls_started ON calls(started_utc);
+CREATE INDEX IF NOT EXISTS calls_status ON calls(status);
 CREATE TABLE IF NOT EXISTS turns (
   call_id TEXT NOT NULL, idx INTEGER NOT NULL, at_utc TEXT NOT NULL, language TEXT,
   borrower TEXT NOT NULL, agent TEXT NOT NULL, tools TEXT NOT NULL, refused TEXT NOT NULL,
@@ -68,16 +69,19 @@ class InsightsStore:
         self._local = threading.local()
         self._keepalive = self._connect()
         self._keepalive.executescript(SCHEMA)
-        try:                                    # added later: the supervisor's note per turn
-            self._keepalive.execute("ALTER TABLE turns ADD COLUMN coach TEXT")
-        except sqlite3.OperationalError:
-            pass
+        # Added later: the supervisor's note per turn; voice: seconds until the first words.
+        for column in ("coach TEXT", "first_s REAL"):
+            try:
+                self._keepalive.execute(f"ALTER TABLE turns ADD COLUMN {column}")
+            except sqlite3.OperationalError:
+                pass
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._uri, uri=True, isolation_level=None, timeout=30,
                                check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")   # each trace span is its own commit
         return conn
 
     @property
@@ -104,17 +108,17 @@ class InsightsStore:
                  tools: list[str] | None = None, refused: list[str] | None = None,
                  replaced: list[str] | None = None, seconds: float | None = None,
                  model_calls: int = 0, prompt_tokens: int = 0, cached_tokens: int = 0,
-                 coach: str | None = None) -> None:
+                 coach: str | None = None, first_s: float | None = None) -> None:
         db = self.db
         db.execute("BEGIN IMMEDIATE")
         try:
             idx = db.execute("SELECT COUNT(*) FROM turns WHERE call_id=?",
                              (call_id,)).fetchone()[0]
-            db.execute("INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            db.execute("INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        (call_id, idx, _now(), language, borrower, agent,
                         json.dumps(tools or []), json.dumps(refused or []),
                         json.dumps(replaced or []), seconds, model_calls, prompt_tokens,
-                        cached_tokens, coach))
+                        cached_tokens, coach, first_s))
             blocks = len(refused or []) + len(replaced or [])
             db.execute("UPDATE calls SET turns = turns + ?, blocks = blocks + ?, "
                        "language = COALESCE(?, language) WHERE call_id=?",
@@ -158,7 +162,8 @@ class InsightsStore:
     def turn_stats(self) -> list[dict[str, Any]]:
         """Speed and token numbers for every borrower turn, in one query."""
         return [dict(r) for r in self.db.execute(
-            "SELECT t.seconds, t.model_calls, t.prompt_tokens, t.cached_tokens FROM turns t "
+            "SELECT t.seconds, t.model_calls, t.prompt_tokens, t.cached_tokens, t.first_s "
+            "FROM turns t "
             "JOIN calls c ON c.call_id = t.call_id WHERE t.borrower != '' AND c.status='ended'")]
 
     def handle_seconds(self) -> list[float]:

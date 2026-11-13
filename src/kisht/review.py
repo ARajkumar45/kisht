@@ -29,7 +29,8 @@ SENTIMENTS = ["positive", "neutral", "negative", "distressed"]
 # Code-side compliance: which blocked actions count under which rule.
 COMPLIANCE_RULES = {
     "no_threats": ({"banned_phrase"}, "Threats or shaming"),
-    "privacy": ({"leak_before_identity"}, "Loan details before identity"),
+    "privacy": ({"leak_before_identity", "guessed_identity"},
+                "Loan or identity details before identity"),
     "no_false_claims": ({"false_promise_claim", "unbacked_link_claim", "false_claim"},
                         "Claims only code can make (promise saved, link sent, waiver)"),
     "within_policy": ({"date_out_of_policy", "amount_out_of_policy", "promise_exists",

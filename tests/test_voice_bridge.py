@@ -77,3 +77,77 @@ def test_bad_targets_are_rejected(guard, calls, account, target):
 def test_helpers():
     assert last_user_text([{"role": "user", "content": [{"type": "text", "text": "hi"}]}]) == "hi"
     assert "".join(chunk_text("one two three four " * 5)) == "one two three four " * 5
+
+
+# ---------- hardening found by the audit before the first real phone call ----------
+
+def test_a_run_id_is_bound_to_its_borrower_and_a_closed_call_is_not_reused(guard, calls, ledger,
+                                                                            account):
+    """Unpatched Bolna sends no run id, so every call arrived as "unpatched-default" and the
+    next borrower continued the previous borrower's verified conversation."""
+    from kisht_support import make_account
+    other = make_account(ledger, borrower_id="br_2", loan_id="ln_2")
+    model = FakeModel(tool("verify_identity", pincode="560038"), text("Aapki EMI Rs 3000 hai."),
+                      text("Kripya janm tithi bataiye."), text("Ji."))
+    _, client = make(guard, calls, model)
+    client.post("/v1/chat/completions", json=request(["PIN 560038"], run=""))
+    first = calls.r.get("bolna:run:unpatched-default")
+    r = sse(client.post("/v1/chat/completions",
+                        json=request(["haan"], run="", target=f"demo-nbfc:{other[0]}")))
+    second = calls.r.get("bolna:run:unpatched-default")
+    assert second != first and calls.get(second, "borrower_id") == other[0]
+    assert not calls.get(second, "identity_verified", False) and "3000" not in r
+    calls.end_call(second, "talked")
+    client.post("/v1/chat/completions",
+                json=request(["haan"], run="", target=f"demo-nbfc:{other[0]}"))
+    assert calls.r.get("bolna:run:unpatched-default") != second
+
+
+def test_any_failure_in_a_turn_is_spoken_as_the_fallback_line_and_logged(guard, calls, account,
+                                                                         caplog):
+    from kisht.languages import say
+
+    class Broken(FakeModel):
+        def complete(self, messages, tools=None):
+            raise RuntimeError("database is locked")
+
+    _, client = make(guard, calls, Broken())
+    r = client.post("/v1/chat/completions", json=request(["haan"]))
+    assert r.status_code == 200 and sse(r) == say("hi", "fallback")
+    assert "voice turn failed" in caplog.text and "database is locked" in caplog.text
+
+
+def test_token_is_required_once_set_and_bad_bodies_are_400(guard, calls, account, monkeypatch):
+    _, client = make(guard, calls, FakeModel(text("Ji.")))
+    assert client.post("/v1/chat/completions", content=b"not json").status_code == 400
+    assert client.post("/v1/chat/completions", json=["x"]).status_code == 400
+    assert client.post("/v1/chat/completions",
+                       json={"model": "demo-nbfc:br_1", "messages": "x"}).status_code == 400
+    monkeypatch.setenv("KISHT_BRIDGE_TOKEN", "s3cret-for-test")
+    _, locked = make(guard, calls, FakeModel(text("Ji.")))
+    assert locked.post("/v1/chat/completions", json=request(["haan"])).status_code == 401
+    assert locked.post("/prepare", json={"model": "demo-nbfc:br_1"}).status_code == 401
+    ok = locked.post("/v1/chat/completions", json=request(["haan"]),
+                     headers={"Authorization": "Bearer s3cret-for-test"})
+    assert ok.status_code == 200 and sse(ok) == "Ji."
+
+
+def test_health_is_cheap_unless_asked_to_be_deep(guard, calls, account):
+    model = FakeModel(text("OK"))
+    _, client = make(guard, calls, model)
+    assert client.get("/health").json() == {"ok": True, "call_state": True, "model": True}
+    assert model.requests == []                       # no completion, no model slot taken
+    assert client.get("/health?deep=1").json()["ok"] is True and len(model.requests) == 1
+
+
+def test_a_turn_stops_when_the_caller_has_gone_and_saves_no_reply(guard, calls, account):
+    from kisht.voice_bridge import _CallerGone
+
+    def gone(piece):
+        raise _CallerGone
+
+    bridge, _ = make(guard, calls, FakeModel(text("Kripya janm tithi bataiye.")))
+    with pytest.raises(_CallerGone):
+        bridge.turn("run-9", "demo-nbfc:br_1", "haan", on_say=gone)
+    said = [m for m in calls.messages(calls.r.get("bolna:run:run-9")) if m["role"] == "assistant"]
+    assert len(said) == 1                             # only the greeting

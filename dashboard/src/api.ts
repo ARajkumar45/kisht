@@ -35,6 +35,7 @@ export type Turn = {
   prompt_tokens: number | null;
   cached_tokens: number | null;
   coach: string | null;
+  first_s: number | null;
 };
 
 export type Span = {
@@ -91,7 +92,16 @@ export type Overview = {
   languages: Record<string, number>;
   qa: { average: number | null; reviewed: number };
   blocked: Record<string, number>;
-  speed: { median_turn_s: number | null; model_calls_per_turn: number | null; cache_hit_pct: number | null };
+  speed: {
+    median_turn_s: number | null; model_calls_per_turn: number | null; cache_hit_pct: number | null;
+    median_first_words_s: number | null; voice_turns: number;
+  };
+};
+
+export type Health = {
+  model: { ok: boolean; name: string; server: string };
+  call_state: { ok: boolean };
+  clock: { now: string; fixed: boolean; window: string; open: boolean };
 };
 
 export type PlanItem = {
@@ -189,6 +199,7 @@ const post = <T,>(path: string, body?: unknown) =>
 
 export const api = {
   overview: () => call<Overview>("/api/overview"),
+  health: () => call<Health>("/api/health"),
   plan: () => call<{ date: string | null; items: PlanItem[]; counts: Record<string, number> }>("/api/plan"),
   calls: (params: Record<string, string>) => call<Call[]>("/api/calls?" + new URLSearchParams(params)),
   call: (id: string) => call<CallDetail>(`/api/calls/${id}`),

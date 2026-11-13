@@ -11,9 +11,10 @@ const REASONS: Record<string, string> = {
 export default function Overview() {
   const { data: o, error } = useLoad(api.overview, [], 10000);
   if (!o) return <Page title="Overview"><Loading error={error} /></Page>;
+  const first = o.speed.median_first_words_s;
   const r = o.rates;
   return (
-    <Page title="Overview" sub="Every conversation the AI agent had, scored after the call. Refreshes every 10 seconds.">
+    <Page title="Overview" stale={error} sub="Every conversation the AI agent had, scored after the call. Refreshes every 10 seconds.">
       <div className="tiles">
         <Tile label="Conversations" value={o.calls} hint={o.live ? `${o.live} live now` : "none live"} />
         <Tile label="Right person reached" value={pct(r.right_party_contact)} hint="identity verified" />
@@ -45,6 +46,8 @@ export default function Overview() {
           <div className="kv">
             <span>Median conversation length</span><b>{o.handle_time_s == null ? "–" : o.handle_time_s >= 60 ? `${Math.floor(o.handle_time_s / 60)}m ${o.handle_time_s % 60}s` : `${o.handle_time_s}s`}</b>
             <span>Median reply time</span><b>{o.speed.median_turn_s ?? "–"} s</b>
+            <span title="Voice calls: the reply is spoken sentence by sentence while it is written">First words on a voice call</span>
+            <b>{first == null ? "–" : `${first} s`} <span className="muted small">{first == null ? "no voice turns yet" : `median of ${o.speed.voice_turns} turns`}</span></b>
             <span>Model calls per reply</span><b>{o.speed.model_calls_per_turn ?? "–"}</b>
             <span>Prompt tokens served from cache</span><b>{pct(o.speed.cache_hit_pct)}</b>
           </div>

@@ -8,24 +8,50 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = [], pollMs?
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const run = useCallback(load, deps);
   const refresh = useCallback(() => {
+    let current = true;
     run().then(
       (d) => {
+        if (!current) return; // an older request must not overwrite a newer one
         setData(d);
         setError(null);
       },
-      (e: Error) => setError(e.message),
+      (e: Error) => current && setError(e.message),
     );
+    return () => {
+      current = false;
+    };
   }, [run]);
   useEffect(() => {
-    refresh();
-    if (!pollMs) return;
-    const t = setInterval(refresh, pollMs);
-    return () => clearInterval(t);
+    let cancel = refresh();
+    if (!pollMs) return cancel;
+    // No polling while the tab is hidden; one refresh when it comes back.
+    const tick = () => {
+      if (document.hidden) return;
+      cancel();
+      cancel = refresh();
+    };
+    const t = setInterval(tick, pollMs);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      cancel();
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [refresh, pollMs]);
   return { data, error, refresh };
 }
 
-export function Page({ title, sub, children, actions }: { title: string; sub?: string; children: ReactNode; actions?: ReactNode }) {
+/** The value, a moment after it stops changing (search boxes). */
+export function useDebounced<T>(value: T, ms = 250): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
+export function Page({ title, sub, children, actions, stale }: { title: string; sub?: string; children: ReactNode; actions?: ReactNode; stale?: string | null }) {
   return (
     <div className="page">
       <header className="page-head">
@@ -35,13 +61,19 @@ export function Page({ title, sub, children, actions }: { title: string; sub?: s
         </div>
         {actions}
       </header>
+      {stale && <div className="banner" role="alert">Cannot reach the server ({stale}). Showing the last data received.</div>}
       {children}
     </div>
   );
 }
 
 export function Loading({ error }: { error?: string | null }) {
-  return <div className={error ? "error" : "muted"}>{error ? `Could not load: ${error}` : "Loading…"}</div>;
+  if (error) return <div className="banner" role="alert">Could not load: {error}</div>;
+  return (
+    <div className="skeleton" aria-label="Loading">
+      <div /><div /><div />
+    </div>
+  );
 }
 
 export function Tile({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: string; tone?: "good" | "bad" | "warn" }) {

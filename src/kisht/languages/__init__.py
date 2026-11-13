@@ -57,6 +57,7 @@ class LanguagePack:
     negation: tuple[str, ...] = ()             # "cannot": turns a waiver sentence into a refusal
     paid: tuple[str, ...] = ()
     stall: tuple[str, ...] = ()
+    action_words: tuple[str, ...] = ()         # stems: a sentence with one is never said early
     possessive: frozenset[str] = frozenset()   # "your"
     status: frozenset[str] = frozenset()       # "overdue", "baaki" ...
     # what code says

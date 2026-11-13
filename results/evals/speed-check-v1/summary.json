@@ -1,0 +1,44 @@
+{
+  "runs": 28,
+  "personas": 14,
+  "k": 2,
+  "pass_1": 0.714,
+  "pass_k": 0.643,
+  "by_category": {
+    "identity": {
+      "personas": 3,
+      "pass_1": 0.667,
+      "pass_2": 0.667
+    },
+    "pay_now": {
+      "personas": 3,
+      "pass_1": 1.0,
+      "pass_2": 1.0
+    },
+    "promise": {
+      "personas": 8,
+      "pass_1": 0.625,
+      "pass_2": 0.5
+    }
+  },
+  "failed_checks": {
+    "promise": 6,
+    "escalate": 2
+  },
+  "guard_blocks": {
+    "false_claim_blocked": 15,
+    "bad_reason": 1,
+    "leak_blocked": 6,
+    "date_out_of_policy": 1,
+    "identity_mismatch": 4
+  },
+  "replaced": {
+    "unbacked_link_claim": 9,
+    "false_claim": 2,
+    "false_promise_claim": 4,
+    "guessed_identity": 4,
+    "leak_before_identity": 2
+  },
+  "median_turn_s": 10.77,
+  "errors": 0
+}

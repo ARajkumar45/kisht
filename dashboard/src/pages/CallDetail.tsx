@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type QAResult, type Review, type Span, type Turn } from "../api";
 import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, rupees, useLoad } from "../ui";
 
 export default function CallDetail() {
   const { id = "" } = useParams();
-  const { data, error, refresh } = useLoad(() => api.call(id), [id], 4000);
+  // A finished, reviewed call no longer changes: stop asking for it every 4 seconds (each
+  // request re-reads the audit files).
+  const [settled, setSettled] = useState(false);
+  const { data, error, refresh } = useLoad(() => api.call(id), [id], settled ? undefined : 4000);
+  const done = data?.call.status === "ended" && !!data.review;
+  useEffect(() => setSettled(done), [done]);
   if (!data) return <Page title="Call"><Loading error={error} /></Page>;
   const { call, turns, spans, review, actions } = data;
   return (
@@ -101,7 +106,7 @@ function Transcript({ turns }: { turns: Turn[] }) {
                 {t.tools.map((x, i) => <span key={i} className="chip tool">{x}</span>)}
                 {t.refused.map((x, i) => <span key={"r" + i} className="chip bad">refused: {x}</span>)}
                 {t.replaced.map((x, i) => <span key={"p" + i} className="chip bad">reply replaced: {x}</span>)}
-                {t.seconds != null && <span className="chip">{t.seconds}s · {t.model_calls} model call{t.model_calls === 1 ? "" : "s"}</span>}
+                {t.seconds != null && <span className="chip">{t.first_s != null ? `first words ${t.first_s}s · whole reply ` : ""}{t.seconds}s · {t.model_calls} model call{t.model_calls === 1 ? "" : "s"}</span>}
               </div>
             )}
           </div>

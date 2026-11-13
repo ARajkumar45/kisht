@@ -97,6 +97,16 @@ def main(argv=None) -> int:
         ids[out.name] = agent_id
         IDS.write_text(json.dumps(ids, indent=2) + "\n")
         print(f"Bolna agent {agent_id}")
+    try:
+        # Have the model read this borrower's instructions now, so the first reply of the
+        # call is fast. Run this script (or POST /prepare yourself) again just before dialling:
+        # the model server remembers only the last few borrowers.
+        root = a.bridge.removesuffix("/v1")
+        httpx.post(f"{root}/prepare", json={"model": f"{a.lender}:{a.borrower}"},
+                   timeout=5).raise_for_status()
+        print("bridge is preparing this call")
+    except httpx.HTTPError:
+        print("bridge not reachable: the first reply of the call will be slow (about 5 s)")
     return 0
 
 

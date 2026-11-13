@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
 import sys
 from datetime import date, datetime
 
@@ -164,11 +166,19 @@ def cmd_bridge(args) -> int:
 
     from kisht.voice_bridge import VoiceBridge, create_app
 
-    rt = build(args.config, audit_name="voice")
+    now = None
+    if args.at:                       # demo clock: a test call works outside the calling window
+        fixed = datetime.fromisoformat(args.at)
+        now = lambda: fixed
+    rt = build(args.config, audit_name="voice", now=now)
+    # live=True: on a call the model gets seconds, not minutes, before the fallback line.
     bridge = VoiceBridge(lenders=rt.lenders, guards=rt.guards, calls=rt.calls,
-                         model=rt.models.for_role("agent"), agreements=rt.agreements,
+                         model=rt.models.for_role("agent", live=True), agreements=rt.agreements,
                          insights=rt.insights, reviewer_model=_reviewer(rt))
     _sweeper(rt)                 # a call that just goes quiet still gets its note and review
+    if not os.environ.get("KISHT_BRIDGE_TOKEN"):
+        print("note: KISHT_BRIDGE_TOKEN is not set; fine on this machine only. Set it before "
+              "the bridge is reachable from outside (tunnel, Docker).", file=sys.stderr)
     uvicorn.run(create_app(bridge), host=args.host, port=args.port, log_level="warning")
     return 0
 
@@ -181,7 +191,8 @@ def _sweeper(rt):
     from kisht.wrapup import start_sweeper
 
     return start_sweeper(insights=rt.insights, calls=rt.calls, guards=rt.guards,
-                         agent_model=rt.models.for_role("agent"), reviewer_model=_reviewer(rt),
+                         agent_model=rt.models.for_role("agent", background=True),
+                         reviewer_model=_reviewer(rt),
                          agreements=rt.agreements)
 
 
@@ -242,6 +253,7 @@ def main(argv=None) -> int:
     br = sub.add_parser("bridge")
     br.add_argument("--host", default="127.0.0.1")
     br.add_argument("--port", type=int, default=5050)
+    br.add_argument("--at", help="fixed clock for demos, e.g. 2026-11-12T11:00:00+05:30")
     sm = sub.add_parser("simulate", help="plan the day and run N simulated conversations")
     sm.add_argument("--n", type=int, default=16)
     sm.add_argument("--workers", type=int, default=2)
@@ -254,6 +266,11 @@ def main(argv=None) -> int:
     sv.add_argument("--port", type=int, default=8000)
     sv.add_argument("--at", help="fixed clock for demos, e.g. 2026-11-12T11:00:00+05:30")
     args = p.parse_args(argv)
+    # Failures in background threads (sweeper, wrap-up, a voice turn) used to vanish.
+    logging.basicConfig(level=os.environ.get("KISHT_LOG_LEVEL", "INFO"),
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    for noisy in ("httpx", "httpx2", "httpcore", "openai"):     # one line per model request
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat, "plan": cmd_plan,
             "bridge": cmd_bridge, "simulate": cmd_simulate, "review": cmd_review,
             "serve": cmd_serve}[args.cmd](args)

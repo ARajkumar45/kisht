@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, time, useLoad } from "../ui";
+import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, time, useDebounced, useLoad } from "../ui";
 
 export default function Calls() {
-  const [q, setQ] = useState("");
+  const [typed, setQ] = useState("");
+  const q = useDebounced(typed); // one request when typing stops, not one per key
   const [outcome, setOutcome] = useState("");
   const [language, setLanguage] = useState("");
   const [flagged, setFlagged] = useState(false);
@@ -18,7 +19,7 @@ export default function Calls() {
   return (
     <Page title="Call log" sub="Every conversation, with its transcript, step-by-step trace and QA review. Click a row.">
       <div className="filters">
-        <input placeholder="Search name, words said, call id…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input placeholder="Search name, words said, call id…" value={typed} onChange={(e) => setQ(e.target.value)} />
         <select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
           <option value="">All outcomes</option>
           {["promise", "link_sent", "escalated", "opted_out", "not_verified", "talked"].map((o) => <option key={o} value={o}>{human(o)}</option>)}

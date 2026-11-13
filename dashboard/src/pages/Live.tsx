@@ -5,6 +5,7 @@ import { Badge, Card, CallLink, LANG, Loading, Page, human, time, useLoad } from
 const ALERT: Record<string, string> = {
   banned_phrase: "Threat or banned phrase blocked",
   leak_before_identity: "Loan detail before identity blocked",
+  guessed_identity: "Agent offered a date of birth or PIN: blocked",
   false_promise_claim: "False 'promise saved' blocked",
   unbacked_link_claim: "False 'link sent' blocked",
   false_claim: "False waiver / payment claim blocked",
@@ -50,7 +51,7 @@ export default function Live() {
   const { data, error, refresh } = useLoad(api.live, [], 2500);
   if (!data) return <Page title="Live"><Loading error={error} /></Page>;
   return (
-    <Page title="Live" sub="Supervisor view: conversations happening now and every alert. Coach the AI with a private note, or take a conversation over.">
+    <Page title="Live" stale={error} sub="Supervisor view: conversations happening now and every alert. Coach the AI with a private note, or take a conversation over.">
       <div className="grid-2">
         <Card title={`Live conversations (${data.live.length})`}>
           {!data.live.length && <div className="muted">No conversation is live. Start one from Test chat, or run <code>uv run kisht simulate</code>.</div>}

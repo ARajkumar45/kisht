@@ -93,3 +93,17 @@ class _InlineThread:
 
     def start(self):
         self.target()
+
+
+def test_health_reports_what_the_dashboard_depends_on(client, monkeypatch):
+    c, _ = client
+    from kisht import api
+
+    def down(*a, **k):
+        raise api.httpx.ConnectError("refused")
+
+    monkeypatch.setattr(api.httpx, "get", down)
+    h = c.get("/api/health").json()
+    assert h["model"]["ok"] is False and h["call_state"]["ok"] is True
+    assert set(h["clock"]) == {"now", "fixed", "window", "open"}
+    assert c.get("/api/overview").json()["speed"]["median_first_words_s"] is None

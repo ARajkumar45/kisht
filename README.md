@@ -192,6 +192,10 @@ sweeper after a few minutes.
 
 The dashboard has no login. It is built for a local demo; put it behind authentication before
 exposing it to a network.
+The voice bridge accepts any caller on this machine by default. Before it is reachable from
+outside (a tunnel for a phone provider, Docker), set `KISHT_BRIDGE_TOKEN` for both `kisht
+bridge` and `tools/run_bolna.sh`: the bridge then requires it as a bearer token. Docker
+publishes both ports on 127.0.0.1 only.
 
 Traces go to the dashboard's store. Set `tracing.otlp_endpoint` in `config.yaml` to send the
 same spans to Jaeger, Arize Phoenix or Grafana Tempo as well.
@@ -269,6 +273,10 @@ uv run python evals/run.py --k 4           # evals (hours on a laptop; resumable
 
 Voice: `tools/run_bolna.sh` (Bolna fork from source), `uv run kisht bridge`, then
 `uv run python tools/make_voice_agent.py br_0009 --post` and talk through Bolna's mic client.
+The same script asks the bridge to prepare the call (the model reads that borrower's
+instructions while the phone rings), and on the call each sentence is spoken as soon as it is
+written and checked, so the borrower hears the first words after about 1-2 s on the local
+model instead of waiting for the whole reply (docs/DECISIONS.md, D108).
 
 ### Docker
 

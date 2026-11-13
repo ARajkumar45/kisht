@@ -9,6 +9,7 @@ whose state has already expired is marked abandoned. A Redis lock makes sure two
 """
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import UTC, datetime
 from typing import Any
@@ -18,18 +19,20 @@ from kisht.insights import InsightsStore
 from kisht.ports import ChatModel
 from kisht.review import Reviewer
 
+log = logging.getLogger("kisht.wrapup")
+
 VOICE_IDLE_S = 300        # a turn can take a minute when the model server is busy
 CHAT_IDLE_S = 30 * 60
 LOCK_TTL_S = 600
 
 
-def _claim(calls: Any, call_id: str) -> bool:
+def claim(calls: Any, call_id: str) -> bool:
     return bool(calls.r.set(f"wrapup:{call_id}", "1", nx=True, ex=LOCK_TTL_S))
 
 
 def finish_and_review(agent: Agent, reviewer_model: ChatModel | None) -> dict[str, str] | None:
     """Case note + close + review, once. Returns None if another process already did it."""
-    if not _claim(agent.calls, agent.call_id):
+    if not claim(agent.calls, agent.call_id):
         return None
     done = agent.finish()
     if agent.insights and reviewer_model:
@@ -39,7 +42,13 @@ def finish_and_review(agent: Agent, reviewer_model: ChatModel | None) -> dict[st
 
 def finish_in_background(agent: Agent, reviewer_model: ChatModel | None) -> None:
     """For the voice path: the caller must hear the last reply now, not after the case note."""
-    threading.Thread(target=finish_and_review, args=(agent, reviewer_model), daemon=True).start()
+    def run() -> None:
+        try:
+            finish_and_review(agent, reviewer_model)
+        except Exception:
+            log.exception("wrap-up failed (call %s)", agent.call_id)
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def sweep(*, insights: InsightsStore, calls: Any, guards: dict, agent_model: ChatModel,
@@ -70,8 +79,8 @@ def start_sweeper(interval_s: int = 30, **kw: Any) -> threading.Thread:
         while not stop.wait(interval_s):
             try:
                 sweep(**kw)
-            except Exception:  # noqa: BLE001, S112 - the sweeper must survive any one bad call
-                continue
+            except Exception:
+                log.exception("sweeper pass failed")
 
     t = threading.Thread(target=loop, daemon=True, name="kisht-sweeper")
     t.stop = stop  # type: ignore[attr-defined]

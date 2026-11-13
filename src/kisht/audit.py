@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -60,8 +61,10 @@ def entries_for_call(audit_dir: str | Path, call_id: str) -> list[dict[str, Any]
 
 class AuditLog:
     def __init__(self, path: str | Path | None = None):
-        self.entries: list[dict[str, Any]] = []
         self.path = Path(path) if path else None
+        # With a file, the file is the record: memory keeps a recent tail only, so a process
+        # that runs for weeks does not grow without limit. Without one (tests), keep all.
+        self.entries: Any = deque(maxlen=2000) if self.path else []
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 

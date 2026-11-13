@@ -155,3 +155,45 @@ def test_supervisor_endpoints_on_a_live_chat(client):  # noqa: F811
     assert said["ended"] == "escalate_to_human" and said["tools"] == []
     assert c.get("/api/desk").json()[0]["reason"] == "supervisor_takeover"
     assert c.post("/api/calls/nope/coach", json={"note": "x"}).status_code == 404
+
+
+# ---------- speed: fewer model rounds per turn ----------
+
+def test_identity_check_returns_the_dues_so_no_second_round_is_needed(guard, calls, account):
+    model = FakeModel(tool("verify_identity", date_of_birth="1990-04-02"),
+                      text("Aapka 3000 rupaye ka EMI 5 November se baaki hai."))
+    agent = _start(guard, calls, account, model)
+    result = agent.handle("2 April 1990")
+    assert result.tool_calls == ["verify_identity"] and result.model_calls == 2
+    assert "3000" in result.reply and not result.replaced
+    tool_msg = next(m for m in calls.messages(agent.call_id) if m.get("role") == "tool")
+    assert '"overdue_amount": 3000' in tool_msg["content"]
+    assert [e["action"] for e in guard.audit.entries][-2:] == ["get_dues", "verify_identity"]
+
+
+def test_model_is_told_to_check_identity_before_its_first_try(guard, calls, account):
+    model = FakeModel(text("Ji?"), tool("verify_identity", pincode="560038"), text("Dhanyavaad."))
+    agent = _start(guard, calls, account, model)
+    agent.handle("haan boliye")
+    assert "verify_identity" not in model.requests[0][-1]["content"]      # nothing to check yet
+    agent.handle("PIN 560038")
+    assert "call verify_identity with it now" in model.requests[1][-1]["content"]
+
+
+def test_prompt_asks_for_short_replies(lender):
+    from kisht.prompt import stable_prefix
+    assert "one or two short sentences" in stable_prefix(lender)
+
+
+def test_call_start_warms_the_model_cache(guard, calls, account):
+    import threading
+    done = threading.Event()
+
+    class Warmable(FakeModel):
+        def warm(self, messages, tools=None):
+            self.warmed = (messages[0]["role"], messages[-1]["role"], bool(tools))
+            done.set()
+
+    model = Warmable()
+    _start(guard, calls, account, model)
+    assert done.wait(2) and model.warmed == ("system", "user", True)

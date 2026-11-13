@@ -25,12 +25,16 @@ PACK = LanguagePack(
                                   ("shukravar", "शुक्रवार"), ("shanivar", "शनिवार"),
                                   ("ravivar", "रविवार")]),
     promise_saved=((r"\b(note kar (liya|li)|record kar (liya|diya|di)|darj kar (liya|diya)|"
-                   r"confirmation mil gaya|confirm ho gaya)\b"),),
+                   r"confirmation mil gaya|confirm ho gaya|"
+                    r"(note|record|darj|save) ho (gaya|gayi|chuka|chuki))\b"),
+                   r"(नोट|रिकॉर्ड|दर्ज) (कर (लिया|दिया)|हो (गया|गई|चुका))"),
     link_sent=(r"link\b.{0,40}\bbhej (diya|di|rahi|raha|dunga|dungi|deti|deta)",
                r"\bbhej (diya|di|rahi|raha|deti|deta).{0,40}\blink\b"),
     waiver=(r"\b(waive kar|maaf kar (diya|denge|dete))\b",),
     negation=(r"\b(nahi|nahin)\b",),
     paid=(r"\bpayment mil gay(a|i)\b",),
+    action_words=(r"darj|vaada|wada|bhej|maaf kar|chhoot|jama|mil gaya|ho gaya|kar diya|kar liya",
+                  r"रिकॉर्ड|नोट|दर्ज|वादा|लिंक|भेज|कन्फर्म|वेरिफ|माफ|छूट|जमा|टीम"),
     stall=((r"check kar(te|ti|ta) (hain|hoon|hun)|check kar rah(a|i|e)|"
            r"dekh rah(a|i|e) (hoon|hun|hain)|ek (minute|second)"),
            r"\brecord kar (rahi|raha|deti|deta|dungi|dunga) (hoon|hun|hu)\b"),
@@ -44,6 +48,7 @@ PACK = LanguagePack(
         "fallback": "Maaf kijiye, abhi technical dikkat hai. Hamari team aapse sampark karegi. "
                     "Dhanyavaad.",
         "stuck": "Maaf kijiye, main yeh nahi kar paayi. Kya main team se aapko call karwaun?",
+        "moment": "Ji, ek second.",
         "handover": "Main aapko hamari team ke ek saathi se jod rahi hoon, aage ki baat wahi "
                     "karenge. Dhanyavaad.",
         "verify_first": "Kuch bhi details batane se pehle, kya aap apni date of birth ya PIN code "

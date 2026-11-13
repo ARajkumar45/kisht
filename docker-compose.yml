@@ -9,18 +9,27 @@ services:
   kisht:
     build: .
     depends_on: [redis]
-    ports: ["5050:5050"]
+    ports: ["127.0.0.1:5050:5050"]         # this machine only: neither app has a login
+    environment:
+      KISHT_BRIDGE_TOKEN: ${KISHT_BRIDGE_TOKEN:-}
     extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./data:/app/data
       - ./audit:/app/audit
     stdin_open: true
     tty: true
+    healthcheck:                           # healthy = the loan book has been built
+      test: ["CMD", "test", "-f", "data/ledger.sqlite"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
   dashboard:                               # contact-centre dashboard + API, same image and data
     build: .
-    depends_on: [redis, kisht]
+    depends_on:
+      redis: {condition: service_started}
+      kisht: {condition: service_healthy}   # so only one container ever builds the loan book
     command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
-    ports: ["8000:8000"]
+    ports: ["127.0.0.1:8000:8000"]
     extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./data:/app/data

@@ -170,8 +170,11 @@ class PolicyGuard:
                                f"That does not match. {left} attempt(s) left. Ask again politely; "
                                "never reveal the correct value.")
         self.calls.set_state(call_id, identity_verified=True)
-        return {"verified": True, "name": b["name"],
-                "next_step": "Call get_dues now, in this same turn."}
+        # The dues come with the answer: asking the model to call get_dues next cost a whole
+        # extra model round (about two seconds on a phone call) for a step it always takes.
+        return {"verified": True, "name": b["name"], "dues": self.get_dues(call_id),
+                "next_step": "Explain the dues now, briefly. They are in this result; do not "
+                             "call get_dues again this turn."}
 
     # ---------- account reads ----------
 

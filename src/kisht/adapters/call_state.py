@@ -40,7 +40,10 @@ class RedisCallState:
 
     @classmethod
     def from_url(cls, url: str, **kwargs) -> RedisCallState:
-        return cls(redis.Redis.from_url(url, decode_responses=True), **kwargs)
+        # Timeouts: a Redis that hangs must fail a turn in seconds (the caller then hears
+        # the fallback line), not hold it forever.
+        return cls(redis.Redis.from_url(url, decode_responses=True, socket_timeout=3,
+                                        socket_connect_timeout=3), **kwargs)
 
     # ---------- call lifecycle ----------
 

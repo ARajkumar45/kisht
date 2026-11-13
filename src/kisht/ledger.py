@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS plans (
   PRIMARY KEY (plan_date, loan_id));
 CREATE INDEX IF NOT EXISTS ix_inst_due ON instalments (due_date);
 CREATE INDEX IF NOT EXISTS ix_contacts_b ON contacts (borrower_id, started_utc);
+CREATE INDEX IF NOT EXISTS ix_loans_b ON loans (borrower_id);
+CREATE INDEX IF NOT EXISTS ix_promises_loan ON promises (loan_id, status);
+CREATE INDEX IF NOT EXISTS ix_promises_call ON promises (call_id);
+CREATE INDEX IF NOT EXISTS ix_links_call ON payment_links (call_id);
+CREATE INDEX IF NOT EXISTS ix_esc_call ON escalations (call_id);
+CREATE INDEX IF NOT EXISTS ix_followups_call ON followups (call_id);
 """
 
 
@@ -113,6 +119,9 @@ class SqliteLedger:
         conn = sqlite3.connect(self._uri, uri=True, isolation_level=None, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        # WAL: the dashboard reading does not block the bridge writing (two processes).
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
         return conn
 
     @property

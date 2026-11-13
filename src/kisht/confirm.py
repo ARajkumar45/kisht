@@ -104,6 +104,17 @@ _WAIVED = _compile("waiver")
 _NOT = _compile("negation")
 _PAID = _compile("paid")
 _STALL = _compile("stall") + [re.compile(r"\.\.\.\s*$")]
+_ACTION = _compile("action_words")
+
+
+def is_plain_talk(text: str) -> bool:
+    """Nothing in this text can be a claim: no number (amount, date) and no word about an
+    action (record, promise, link, send, verify ...) in any language. Only such sentences
+    may be said on a voice call before the model has finished its reply, because until then
+    code cannot know whether a tool call follows, and words written before a tool call are
+    the model's guess about its result. Seen live in Tamil: "your promise is recorded" came
+    just before the tool call that refused it."""
+    return not re.search(r"\d", text) and not _any(_ACTION, text)
 
 
 def _any(patterns: list[re.Pattern], text: str) -> bool:

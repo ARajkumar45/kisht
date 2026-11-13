@@ -28,21 +28,26 @@ import os
 import re
 import statistics
 import threading
+import time
 from collections import Counter
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
+import httpx
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from kisht.adapters.call_state import CallNotFound
 from kisht.agent import Agent
 from kisht.audit import entries_for_call
 from kisht.guard import GuardRefused
+from kisht.ports import ModelUnavailable
 from kisht.review import Reviewer
 from kisht.runtime import Runtime
+from kisht.wrapup import claim as claim_wrapup
 
 # Run from the repo root (like every kisht command: config.yaml is relative). In Docker the
 # package lives in the venv, so paths come from the working directory, not from __file__.
@@ -77,7 +82,7 @@ class ChatStart(BaseModel):
 
 
 class ChatSay(BaseModel):
-    text: str
+    text: str = Field(min_length=1, max_length=2000)
 
 
 def _pct(n: int, d: int) -> float | None:
@@ -94,8 +99,13 @@ def _json_from(text: str) -> dict | None:
 
 def create_api(rt: Runtime) -> FastAPI:
     app = FastAPI(title="Kisht contact centre")
-    agents: dict[str, Agent] = {}
+    turn_locks: dict[str, threading.Lock] = {}
     lock = threading.Lock()
+
+    @app.exception_handler(ModelUnavailable)
+    async def model_down(_request: Any, exc: ModelUnavailable) -> JSONResponse:
+        """A busy or stopped model server is not a server error of ours: say so plainly."""
+        return JSONResponse({"detail": f"The model server is not answering: {exc}"}, 503)
 
     def lender_of(call: dict):
         return rt.lenders.get(call["lender_id"])
@@ -172,8 +182,44 @@ def create_api(rt: Runtime) -> FastAPI:
                     t["seconds"] for t in turns if t["seconds"]]) else None,
                 "model_calls_per_turn": round(statistics.mean(
                     [t["model_calls"] or 0 for t in turns]), 2) if turns else None,
-                "cache_hit_pct": _pct(cached, prompt)},
+                "cache_hit_pct": _pct(cached, prompt),
+                # Voice only: how long the borrower waits before hearing anything.
+                "median_first_words_s": round(statistics.median(firsts), 1) if (firsts := [
+                    t["first_s"] for t in turns if t.get("first_s")]) else None,
+                "voice_turns": len(firsts)},
         }
+
+    # ---------- is everything this page depends on up? ----------
+
+    health_cache: dict[str, Any] = {"at": 0.0, "value": None}
+
+    @app.get("/api/health")
+    def health() -> dict[str, Any]:
+        """Cheap and cached for 5 s: the dashboard asks every few seconds. The model check
+        only says the server answers; `kisht health` runs a real completion."""
+        if health_cache["value"] and time.monotonic() - health_cache["at"] < 5:
+            return health_cache["value"]
+        role = rt.cfg.llm_roles["agent"]
+        server = rt.cfg.llm_servers[role.server]
+        try:
+            model_ok = httpx.get(server.base_url.rstrip("/") + "/models", timeout=1.5).is_success
+        except httpx.HTTPError:
+            model_ok = False
+        try:
+            redis_ok = bool(rt.calls.r.ping())
+        except Exception:  # noqa: BLE001 - any failure means "down"
+            redis_ok = False
+        guard = next(iter(rt.guards.values()))
+        now = guard.now()
+        window = guard.lender.contact.window
+        value = {"model": {"ok": model_ok, "name": role.model.split("/")[-1], "server": role.server},
+                 "call_state": {"ok": redis_ok},
+                 "clock": {"now": now.isoformat(timespec="minutes"),
+                           "fixed": abs((now - datetime.now(now.tzinfo)).total_seconds()) > 120,
+                           "window": f"{window.start:%H:%M}-{window.end:%H:%M}",
+                           "open": window.start <= now.time() < window.end}}
+        health_cache.update(at=time.monotonic(), value=value)
+        return value
 
     # ---------- today's plan ----------
 
@@ -297,7 +343,10 @@ def create_api(rt: Runtime) -> FastAPI:
 
     @app.get("/api/live")
     def live() -> dict[str, Any]:
-        rt.insights.close_stale()
+        # Safety net only, and late: the sweeper wraps a quiet call up properly after 30
+        # minutes (case note, ledger contact, review). At 30 here, this poll won that race
+        # and the call got none of those.
+        rt.insights.close_stale(max_idle_minutes=120)
         live_calls = []
         for c in rt.insights.calls(status="live", limit=50):
             t = rt.insights.turns(c["call_id"])
@@ -341,7 +390,8 @@ def create_api(rt: Runtime) -> FastAPI:
 
     @app.get("/api/desk")
     def desk() -> list[dict[str, Any]]:
-        rows = rt.ledger.db.execute("SELECT * FROM escalations ORDER BY created_utc DESC")
+        rows = rt.ledger.db.execute(
+            "SELECT * FROM escalations ORDER BY created_utc DESC LIMIT 500").fetchall()
         items = [_desk_item(dict(r)) for r in rows]
         # Unresolved first; within those, the case closest to (or furthest past) its deadline.
         items.sort(key=lambda d: (d["status"] == "resolved", d["sla_hours"] - d["age_hours"]))
@@ -423,7 +473,8 @@ def create_api(rt: Runtime) -> FastAPI:
     # ---------- test chat as a borrower ----------
 
     @app.get("/api/borrowers")
-    def borrowers(q: str | None = None, limit: int = 60) -> list[dict[str, Any]]:
+    def borrowers(q: str | None = None,
+                  limit: int = Query(60, ge=1, le=200)) -> list[dict[str, Any]]:
         sql = ("SELECT b.id, b.name, b.language, b.city, l.id AS loan_id, l.emi, l.product "
                "FROM borrowers b JOIN loans l ON l.borrower_id = b.id")
         args: list[Any] = []
@@ -439,6 +490,8 @@ def create_api(rt: Runtime) -> FastAPI:
         if not b:
             raise HTTPException(404, "no such borrower")
         loans = rt.ledger.loans_for(body.borrower_id)
+        if not loans:
+            raise HTTPException(404, "this borrower has no loan")
         guard = rt.guards[b["lender_id"]]
         try:
             agent, greeting = Agent.start(
@@ -448,22 +501,31 @@ def create_api(rt: Runtime) -> FastAPI:
                 source="dashboard")
         except GuardRefused as e:
             raise HTTPException(409, f"{e.code}: {e.message}") from e
-        with lock:
-            agents[agent.call_id] = agent
         return {"call_id": agent.call_id, "greeting": greeting, "borrower": b["name"],
                 "language": b["language"]}
 
     def _agent(call_id: str) -> Agent:
-        with lock:
-            agent = agents.get(call_id)
-        if not agent:
+        """The agent holds nothing: it is rebuilt from the shared call state on every
+        request, so a chat survives a restart of this process and nothing piles up here."""
+        try:
+            state = rt.calls.get_state(call_id)
+        except CallNotFound:
+            raise HTTPException(404, "no open chat with this id") from None
+        if state.get("status") == "ended" or state.get("tenant_id") not in rt.guards:
             raise HTTPException(404, "no open chat with this id")
-        return agent
+        lender_id = state["tenant_id"]
+        return Agent(call_id, rt.guards[lender_id], rt.calls, rt.models.for_role("agent"),
+                     rt.agreements.get(lender_id), rt.insights)
+
+    def _turn_lock(call_id: str) -> threading.Lock:
+        with lock:
+            return turn_locks.setdefault(call_id, threading.Lock())
 
     @app.post("/api/chat/{call_id}/say")
     def chat_say(call_id: str, body: ChatSay) -> dict[str, Any]:
         agent = _agent(call_id)
-        t = agent.handle(body.text)
+        with _turn_lock(call_id):          # a double send must not run two turns at once
+            t = agent.handle(body.text)
         return {"reply": t.reply, "tools": t.tool_calls, "refused": t.refused,
                 "replaced": t.replaced, "promise_saved": t.promise_saved, "ended": t.ended,
                 "seconds": round(t.model_latency_s, 1)}
@@ -471,9 +533,12 @@ def create_api(rt: Runtime) -> FastAPI:
     @app.post("/api/chat/{call_id}/end")
     def chat_end(call_id: str) -> dict[str, Any]:
         agent = _agent(call_id)
-        done = agent.finish()
+        if not claim_wrapup(rt.calls, call_id):      # the sweeper is closing it right now
+            raise HTTPException(409, "this chat is already being closed")
+        with _turn_lock(call_id):
+            done = agent.finish()
         with lock:
-            agents.pop(call_id, None)
+            turn_locks.pop(call_id, None)
         review_later(call_id, agent.lender)
         return done
 
