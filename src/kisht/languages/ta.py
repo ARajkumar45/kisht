@@ -39,8 +39,10 @@ PACK = LanguagePack(
     promise_saved=(r"\b(note|record|save) (panniten|pannitten|pannittaen|senjitten)",
                    r"\bpathivu (senjitten|seithen|panniten)",
                    r"பதிவு செய்(தேன்|துவிட்டேன்|துட்டேன்)", r"நோட் பண்ணி(ட்டேன்|னேன்)",
-                   r"பதிவு (செய்யப்ப|ஆகி|ஆயிடுச்சு)",
-                   r"\bpathivu (aagiduchu|aayiduchu|seyyapattathu)"),
+                   (r"பதிவு (செய்யப்பட்டது|செய்யப்பட்டுள்ளது|செய்யப்பட்டுவிட்டது|செய்யப்படுகிறது|"
+                   r"ஆகிவிட்டது|ஆயிடுச்சு)"),
+                   r"\bpathivu (aagiduchu|aayiduchu|seyyapattathu)",
+                   r"பதிவு (செய்கிறேன்|பண்றேன்|செய்து கொண்டிருக்கிறேன்)"),
     link_sent=(r"\blink\b.{0,40}(anupiten|anuppiten|anuppitten|anupuren|anuppuren|anuppi)",
                r"லிங்க்.{0,40}அனுப்பி"),
     waiver=(r"thallupadi (panniten|senjom|pannitom)", r"தள்ளுபடி (செய்|பண்ணி)"),

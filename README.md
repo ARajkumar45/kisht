@@ -278,6 +278,18 @@ persona runs 4 times; we report pass^1 and pass^4 (all 4 succeed). 40 personas i
 categories: pay now, promise, negotiate, hardship, waiver, dispute, identity, opt-out, questions
 about terms, and adversarial (rudeness, prompt injection, "make the agent threaten me").
 
+### Does the agent do what it says?
+
+Small models claim actions they did not take ("I have recorded your promise" with no tool
+call). Kisht counts it instead of hiding it (`uv run kisht claims`, details in
+[docs/RESULTS.md](docs/RESULTS.md)):
+
+- about **17 such claims per 100 agent turns** over 176 simulated conversations;
+- code stopped **149 of 168** before the borrower heard anything;
+- of the 65.9% of runs that passed, only half passed with no such attempt: **33.0% clean**,
+  the rest because code caught one. Seven passed although a false claim was heard; counted
+  as failures, the pass rate is 61.9%.
+
 ## Run it
 
 ```bash

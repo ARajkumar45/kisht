@@ -27,12 +27,19 @@ PACK = LanguagePack(
     promise_saved=((r"\b(note kar (liya|li)|record kar (liya|diya|di)|darj kar (liya|diya)|"
                    r"confirmation mil gaya|confirm ho gaya|"
                     r"(note|record|darj|save) ho (gaya|gayi|chuka|chuki))\b"),
-                   r"(नोट|रिकॉर्ड|दर्ज) (कर (लिया|दिया)|हो (गया|गई|चुका))"),
+                   r"(नोट|रिकॉर्ड|दर्ज) (कर (लिया|दिया)|हो (गया|गई|चुका))",
+                   # "am recording it now": seen passing a retry and reaching the borrower
+                   r"\b(record|note|darj|save) kar (rahi|raha) (hoon|hun|hu)\b"),
     link_sent=(r"link\b.{0,40}\bbhej (diya|di|rahi|raha|dunga|dungi|deti|deta)",
                r"\bbhej (diya|di|rahi|raha|deti|deta).{0,40}\blink\b"),
     waiver=(r"\b(waive kar|maaf kar (diya|denge|dete))\b",),
     negation=(r"\b(nahi|nahin)\b",),
-    paid=(r"\bpayment mil gay(a|i)\b",),
+    paid=(r"\bpayment mil gay(a|i)\b",
+          # "aapka EMI ... pay ho gaya hai": the agent cannot know a payment went through.
+          # Not "... saku ki aapka payment ho gaya hai" (so that I can confirm) or "ya nahi".
+          (r"(?<!saku ki )(?<!sakein ki )(?<!sake ki )\baapk[ai] (payment|emi|bhugtan)\b"
+           r"[^.?!]{0,50}(?<!late )(?<!overdue )(?<!due )(?<!pending )(?<!miss )(?<!baaki )"
+           r"\bho gay[ai] hai\b(?! ya nahi)")),
     action_words=(r"darj|vaada|wada|bhej|maaf kar|chhoot|jama|mil gaya|ho gaya|kar diya|kar liya",
                   r"रिकॉर्ड|नोट|दर्ज|वादा|लिंक|भेज|कन्फर्म|वेरिफ|माफ|छूट|जमा|टीम"),
     stall=((r"check kar(te|ti|ta) (hain|hoon|hun)|check kar rah(a|i|e)|"

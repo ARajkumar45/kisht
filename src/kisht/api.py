@@ -41,7 +41,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from kisht import compliance
+from kisht import claims, compliance
 from kisht.adapters.call_state import CallNotFound
 from kisht.agent import Agent
 from kisht.audit import entries_for_call
@@ -599,7 +599,27 @@ def create_api(rt: Runtime) -> FastAPI:
             "disagreements": [{"call_id": lab["call_id"], "item": lab["item_id"],
                                "ai": q["result"], "human": lab["result"], "by": lab["by"]}
                               for lab, q in pairs if lab["result"] != q["result"]][:30]}
-        return {"evals": evals, "qa_items": qa_items, "calibration": calibration}
+        return {"evals": evals, "qa_items": qa_items, "calibration": calibration,
+                "claims": claim_numbers()}
+
+    claims_cache: dict[str, Any] = {"at": 0.0, "value": None}
+
+    def claim_numbers() -> dict[str, Any]:
+        """Claims with no action behind them (src/kisht/claims.py): in the eval runs, where a
+        pass rate can be split by them, and in the call log. Cached for a minute."""
+        if claims_cache["value"] and time.monotonic() - claims_cache["at"] < 60:
+            return claims_cache["value"]
+        runs = [d for d in (ROOT / "results" / "evals" / n for n in claims.PUBLISHED_RUNS)
+                if (d / "runs.jsonl").exists()]
+        value = {
+            "eval_runs": [d.name for d in runs],
+            "evals": claims.summarise([c for d in runs for c in claims.from_eval_run(
+                d, ROOT / "evals" / "personas.yaml")]) if runs else {},
+            "calls": claims.summarise(claims.from_call_log(
+                rt.insights, ROOT / rt.cfg.stores.audit_dir)),
+            "kinds": claims.KIND_WORDS}
+        claims_cache.update(at=time.monotonic(), value=value)
+        return value
 
     # ---------- the dashboard itself ----------
 

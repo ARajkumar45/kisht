@@ -187,10 +187,24 @@ export type Calibration = {
   agreement_pct: number | null;
   disagreements: { call_id: string; item: string; ai: QAResult; human: QAResult; by: string }[];
 };
+export type ClaimRow = {
+  conversations: number; turns: number; attempts: number; per_100_turns: number | null;
+  by_kind: Record<string, number>; replaced: number; fixed_by_asking_again: number;
+  reached_borrower: number; silent_links: number;
+  examples: { id: string; turn: number; kind: string; said: string }[];
+  pass?: {
+    runs: number; passed: number; pass_pct: number | null; passed_clean: number; clean_pct: number | null;
+    passed_because_code_caught_it: number; passed_with_false_claim_heard: number; strict_pct: number | null;
+  };
+};
+export type Claims = {
+  eval_runs: string[]; evals: Record<string, ClaimRow>; calls: Record<string, ClaimRow>; kinds: Record<string, string>;
+};
 export type Quality = {
   evals: EvalRun[];
   qa_items: { id: string; pass: number; fail: number; na: number; pass_rate: number | null; failing_calls: string[] }[];
   calibration: Calibration;
+  claims: Claims;
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {

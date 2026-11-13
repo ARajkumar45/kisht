@@ -20,7 +20,8 @@ PACK = LanguagePack(
         "september", "october", "november", "december"]),
     promise_saved=((r"\b(promise (is |has been )?(noted|recorded|saved|registered)|(i'?ve|i have) "
                    r"(noted|recorded|saved)|confirmation received|"
-                    r"(noted|recorded|saved|registered) (your|the|this) promise)\b"),),
+                    r"(noted|recorded|saved|registered) (your|the|this) promise|"
+                    r"(i am|i'?m) (recording|noting|saving) (your|the|this|it|that))\b"),),
     link_sent=(r"link\b.{0,40}\bsent\b", r"\b(sent|sending)\b.{0,40}\blink\b",
                r"\b(i'?ll|i will|let me) send (you )?(a |the )?(payment )?link"),
     waiver=((r"\b(waived?|settled?|settlement (is|has been) (done|approved)|penalty (is |has been )?"

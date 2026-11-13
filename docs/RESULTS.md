@@ -2,6 +2,48 @@
 
 Measured numbers, newest first. Each section says how it was measured so it can be re-run.
 
+## Does the agent do what it says? (2026-11-13)
+
+A tool-using model can write "I have recorded your promise" or "I have sent the link" with
+no tool call behind it. `uv run kisht claims` counts this from the records
+(`src/kisht/claims.py`), over the 160-run suite and the Tamil/Telugu suite: 176 simulated
+conversations, 1,000 agent turns.
+
+| Language | Conversations | Agent turns | Claims with nothing behind them | per 100 turns | Fixed by asking again | Replaced by code | Reached the borrower |
+|---|---|---|---|---|---|---|---|
+| en | 64 | 318 | 50 | 15.7 | 18 | 27 | 5 |
+| hi | 96 | 603 | 112 | 18.6 | 40 | 59 | 13 |
+| ta | 8 | 38 | 0 | 0.0 | 0 | 0 | 0 |
+| te | 8 | 41 | 6 | 14.6 | 1 | 4 | 1 |
+| all | 176 | 1000 | 168 | 16.8 | 59 | 90 | 19 |
+
+- **The model does this about 17 times in every 100 turns**, in 91 of 176 conversations:
+  "I have sent the link" 72, "your promise is saved" 67, "it is waived / your payment is
+  received" 18, "let me check" followed by nothing 11.
+- **Code caught 149 of the 168 before the borrower heard anything**: 59 were fixed by asking
+  the model once more, 90 were replaced by a safe line.
+- **19 reached the borrower** in these runs. They were found afterwards, by running today's
+  wider patterns over every reply that went out; the live guard now uses the same patterns,
+  so these wordings are blocked from here on.
+- **What a pass rate hides.** Pass rate 65.9% (116 of 176). Only 58 runs (33.0%) passed with
+  no such attempt; 51 passed because code caught one; 7 passed although a false claim reached
+  the borrower. Counting those 7 as failures: 61.9%.
+
+How far to trust it:
+
+- The detector is the same set of patterns the live guard uses. A claim worded in a way no
+  pattern knows is missed here exactly as it is missed live. To size that, 38 unflagged
+  replies that contained an action word were read one by one: 7 were missed claims (three
+  "your payment has gone through", four "I am recording your promise now"). Both kinds were
+  then added, to the measure and to the guard. The 0 for Tamil is 8 conversations and most
+  likely under-counts.
+- The same reading found two patterns that fired on honest sentences and were fixed: Hindi
+  "maafi chahti hoon" (an apology) counted as a waiver, and Tamil "registered mobile number"
+  counted as "promise recorded". Some of the 18 waiver/payment blocks in the old runs are
+  that false alarm; the model's original words were not kept, so they cannot be re-checked.
+- "Asked again" is logged per conversation, not per turn.
+- The same count over the dashboard's call log is on its Quality page.
+
 ## Tamil and Telugu on the local model (2026-11-11)
 
 How: `uv run python evals/run.py --k 2 --workers 2 --only south --out results/evals/<dir>`.

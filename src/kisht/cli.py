@@ -219,6 +219,24 @@ def cmd_review(args) -> int:
     return 0
 
 
+def cmd_claims(args) -> int:
+    """How often the model claimed an action it did not take, per language."""
+    from kisht import claims
+
+    if args.run:
+        convs = [c for run in args.run for c in claims.from_eval_run(run)]
+        title = "Eval runs: " + ", ".join(args.run)
+    else:
+        rt = build(args.config, audit_name="claims")
+        convs = claims.from_call_log(rt.insights, rt.cfg.stores.audit_dir)
+        title = "Call log"
+    s = claims.summarise(convs)
+    print(claims.render(title, s))
+    for e in s.get("all", {}).get("examples", []):
+        print(f"  reached the borrower ({e['kind']}, {e['id']}): {e['said'][:140]!r}")
+    return 0
+
+
 def cmd_compliance(args) -> int:
     """Check the rules-to-code table against the code; --write regenerates docs/COMPLIANCE.md."""
     from pathlib import Path
@@ -279,6 +297,8 @@ def main(argv=None) -> int:
     sm.add_argument("--at", help="fixed clock, e.g. 2026-11-11T10:00:00+05:30")
     rv = sub.add_parser("review", help="post-call QA review for calls not yet reviewed")
     rv.add_argument("--all", action="store_true", help="review every ended call again")
+    cl = sub.add_parser("claims", help="claims with no action behind them, per language")
+    cl.add_argument("--run", action="append", help="an eval run folder; default: the call log")
     co = sub.add_parser("compliance", help="check the rules-to-code table; --write the doc")
     co.add_argument("--write", action="store_true")
     sv = sub.add_parser("serve", help="dashboard + API")
@@ -293,7 +313,7 @@ def main(argv=None) -> int:
         logging.getLogger(noisy).setLevel(logging.WARNING)
     return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat, "plan": cmd_plan,
             "bridge": cmd_bridge, "simulate": cmd_simulate, "review": cmd_review,
-            "serve": cmd_serve, "compliance": cmd_compliance}[args.cmd](args)
+            "serve": cmd_serve, "compliance": cmd_compliance, "claims": cmd_claims}[args.cmd](args)
 
 
 if __name__ == "__main__":

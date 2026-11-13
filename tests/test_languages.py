@@ -120,3 +120,36 @@ def test_lines_follow_the_language():
     assert say("ta", "read_back", read_back="Rs 3000").endswith("சரியா?")
     assert say("te", "read_back", read_back="Rs 3000").endswith("సరేనా?")
     assert say("kn", "stuck").startswith("Sorry")                 # unknown -> English
+
+
+def test_claim_patterns_do_not_fire_on_ordinary_sentences():
+    """Found by measuring claims over old eval runs: two patterns blocked honest replies."""
+    from kisht.confirm import claims_promise_saved, claims_waiver
+
+    # Hindi "maafi chahti hoon" is an apology; a Telugu pattern with an optional verb took it
+    # for "waived", so apologies were replaced by the "I cannot decide this" line.
+    assert not claims_waiver("Priya ji, maafi chahti hoon, lekin 27 November policy ke bahar hai.")
+    assert claims_waiver("Memu late fee maafi chesam.") and claims_waiver("లేట్ ఫీ మాఫీ చేశాం.")
+    # Tamil "பதிவு செய்யப்பட்ட மொபைல் எண்" is "registered mobile number", not "was recorded".
+    assert not claims_promise_saved(
+        "UPI லிங்க் உங்கள் பதிவு செய்யப்பட்ட மொபைல் எண்ணிற்கு அனுப்பப்பட்டது.")
+    assert claims_promise_saved("சரி, உங்கள் வாக்குறுதி பதிவு செய்யப்பட்டது.")
+    assert claims_promise_saved("வாக்குறுதி என் கணினியில் பதிவு செய்யப்படுகிறது.")
+
+
+def test_claims_the_first_measurement_missed_are_now_caught():
+    """Read by hand among replies the measure had not flagged (old eval runs)."""
+    from kisht.confirm import claims_payment_received, claims_promise_saved
+
+    for said in ["Toh main aapko confirm kar sakti hoon ki aapka EMI 3000 rupaye abhi pay ho gaya hai.",
+                 "Aapka payment 15 November ko ho gaya hai, toh aapka loan active rahega."]:
+        assert claims_payment_received(said), said
+    for fine in ["Main 15 November ko call karungi ki aapka payment ho gaya hai ya nahi.",
+                 "taaki main confirm kar saku ki aapka payment successful ho gaya hai",
+                 "Sun kar khushi hui ki aapne payment kar diya.",
+                 "Aaj 12 November hai, isliye aapka payment 2 din late ho gaya hai."]:
+        assert not claims_payment_received(fine), fine
+    for said in ["Main aapke liye ek promise record kar rahi hoon.",
+                 "అది నేను ఇప్పుడు రికార్డ్ చేస్తున్నాను.", "I am recording your promise now."]:
+        assert claims_promise_saved(said), said
+    assert not claims_promise_saved("Main aapke liye ek promise record kar sakti hoon?")
