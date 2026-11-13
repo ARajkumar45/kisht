@@ -2,6 +2,7 @@
 writes (ledger, insights) and acts through the same guard, so the dashboard shows the real
 system and a human desk action is as audited as an agent action.
 
+    GET  /api/compliance          each recovery-conduct rule, where it is enforced, blocks so far
     GET  /api/overview            KPIs, outcomes, reasons, mood, QA, compliance, speed
     GET  /api/plan                today's planner queue and what happened to each account
     GET  /api/calls               call log (filters: status, outcome, language, flagged, q)
@@ -40,6 +41,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from kisht import compliance
 from kisht.adapters.call_state import CallNotFound
 from kisht.agent import Agent
 from kisht.audit import entries_for_call
@@ -188,6 +190,22 @@ def create_api(rt: Runtime) -> FastAPI:
                     t["first_s"] for t in turns if t.get("first_s")]) else None,
                 "voice_turns": len(firsts)},
         }
+
+    # ---------- rules: where each recovery-conduct rule is enforced ----------
+
+    rules_cache: dict[str, Any] = {"at": 0.0, "value": None}
+
+    @app.get("/api/compliance")
+    def rules() -> dict[str, Any]:
+        """The rules-to-code table plus how often each rule actually stopped something.
+        Cached for 30 s: counting reads every audit file."""
+        if rules_cache["value"] and time.monotonic() - rules_cache["at"] < 30:
+            return rules_cache["value"]
+        book = compliance.load(ROOT / "compliance" / "rbi-recovery-2027.yaml")
+        counts = compliance.blocked_counts(ROOT / rt.cfg.stores.audit_dir, rt.insights)
+        value = compliance.as_dict(book, counts)
+        rules_cache.update(at=time.monotonic(), value=value)
+        return value
 
     # ---------- is everything this page depends on up? ----------
 

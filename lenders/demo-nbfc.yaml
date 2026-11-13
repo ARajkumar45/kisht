@@ -11,6 +11,8 @@ contact:
   max_attempts_per_day: 2
   max_attempts_per_week: 6
   channels: [chat, voice]
+  hold_while_open: [hardship, bereavement, dispute]   # no agent contact while the desk has the case
+  recording_notice: true                               # voice greeting says the call is recorded
 
 promises:
   max_days_after_due: 7          # promise date <= EMI due date + 7 days (or today + 7 if already overdue)
@@ -36,6 +38,12 @@ banned_phrases:                  # blocked in anything the agent says (threats, 
   - badnaam
 
 escalation_desk: "Demo Finance collections desk, weekdays 10:00-18:00"
+
+grievance_officer:               # fictional, like the lender; goes on every written message
+  name: Meera Iyer
+  email: grievance@demofinance.example
+  phone: 1800-000-0000
+  address: Demo Finance Ltd, 12 Example Road, Bengaluru 560001
 
 desk_teams:                      # which human team picks up each kind of hand-off
   hardship: Hardship team

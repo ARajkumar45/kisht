@@ -214,7 +214,7 @@ class Agent:
         guard.start_contact(call_id, borrower_id=borrower_id, loan_id=loan_id, channel=channel)
         first_name = borrower["name"].split()[0]
         calls.set_state(call_id, first_name=first_name)
-        greeting = _greeting(guard, lang, first_name)
+        greeting = greeting_for(guard.lender, lang, first_name, channel)
         calls.append(call_id, {"role": "assistant", "content": greeting})
         if insights:
             insights.open_call(call_id=call_id, lender_id=guard.lender.id,
@@ -596,16 +596,22 @@ def prepare(model: ChatModel, guard: PolicyGuard, borrower_id: str, channel: str
     if lang not in guard.lender.languages.allowed:
         lang = guard.lender.languages.default
     first_name = borrower["name"].split()[0]
-    greeting = {"role": "assistant", "content": _greeting(guard, lang, first_name)}
+    greeting = {"role": "assistant",
+                "content": greeting_for(guard.lender, lang, first_name, channel)}
     messages = [*build_messages(guard.lender, [greeting], guard.today(), first_name, channel),
                 {"role": "user", "content": "."}]
     threading.Thread(target=warm, args=(messages, TOOL_SCHEMAS), daemon=True).start()
     return True
 
 
-def _greeting(guard: PolicyGuard, lang: str, first_name: str) -> str:
-    return GREETING.get(lang, GREETING["en"]).format(
-        agent=guard.lender.agent_name, lender=_short(guard.lender.name), first_name=first_name)
+def greeting_for(lender: Any, lang: str, first_name: str, channel: str) -> str:
+    """The first thing the borrower hears or reads. On a phone call it also says that the
+    call is recorded (RBI 2026 recovery directions, 100P), before anything else is said."""
+    text = GREETING.get(lang, GREETING["en"]).format(
+        agent=lender.agent_name, lender=_short(lender.name), first_name=first_name)
+    if channel == "voice" and lender.contact.recording_notice:
+        text = f"{text} {pack_say(lang, 'recorded')}"
+    return text
 
 
 def _short(name: str) -> str:

@@ -52,6 +52,26 @@ agent> Priya ji, aapke 4450 rupaye overdue hain, 13 din se ... 17 November tak (
 Tools never take a loan or borrower id: they act on the account bound to the conversation, so a
 prompt injection cannot reach another borrower's data.
 
+## Rules traced to code
+
+The Reserve Bank of India issued new directions on how lenders and their recovery agents
+must treat borrowers (RBI/2026-27/230, 6 August 2026). They take effect on 1 January 2027.
+[docs/COMPLIANCE.md](docs/COMPLIANCE.md) goes through them rule by rule: what the paragraph
+requires, the guard that enforces it, the tests that prove it, and what is still missing.
+
+- 21 rule groups traced: 7 enforced by code, 9 partly (each row says what is missing), 1 not
+  built, 4 not applicable to a phone or chat agent (visits, possession, agencies).
+- The table cannot drift from the code: `tests/test_compliance.py` fails if a row points at a
+  guard, a test or a block code that does not exist, or if the page is out of date.
+- The directions say nothing about automated or AI callers. Kisht applies the rules for a
+  human recovery agent to the AI agent.
+- Not legal advice: the lender is fictional and the wording is a paraphrase of the source.
+
+```bash
+uv run kisht compliance           # check the table against the code
+uv run kisht compliance --write   # regenerate docs/COMPLIANCE.md
+```
+
 ## Architecture
 
 ```mermaid
@@ -141,6 +161,7 @@ React + TypeScript dashboard (`dashboard/`) served by `kisht serve`:
 | Human desk | Hand-offs routed to teams (hardship, disputes, collections manager) by rules in the lender YAML, each with a deadline (`desk_sla_hours`); the queue shows the most urgent first and flags late cases. Take, resolve, all audited. The resolution is saved with the borrower's case notes, so the AI knows what a human agreed the next time it talks to them. |
 | Agent assist | For a human picking up a case: an AI brief, next best action, suggested replies in the borrower's language, and answers from the loan agreement with section numbers. |
 | Test chat | A phone-style chat window to be the borrower against the real agent. |
+| Rules | Each RBI recovery-conduct rule, the code that enforces it, the tests that prove it, and how many breaches code has stopped so far. |
 
 ![Overview: simulated and test conversations in Hindi, Tamil, English and Telugu](docs/img/overview.jpg)
 

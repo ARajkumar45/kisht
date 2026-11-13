@@ -104,6 +104,17 @@ export type Health = {
   clock: { now: string; fixed: boolean; window: string; open: boolean };
 };
 
+export type Rule = {
+  id: string; source: string; para: string; requires: string; kind: "rbi" | "kisht";
+  status: "enforced" | "partly" | "gap" | "not_applicable"; how: string; also: string[]; gap: string;
+  guard: string[]; config: string; codes: string[]; tests: string[]; blocked: number;
+};
+export type Rulebook = {
+  sources: Record<string, { title: string; number: string; issued: string; effective: string; url: string; note: string }>;
+  rules: Rule[];
+  summary: Record<string, number>;
+};
+
 export type PlanItem = {
   loan_id: string;
   borrower_id: string;
@@ -200,6 +211,7 @@ const post = <T,>(path: string, body?: unknown) =>
 export const api = {
   overview: () => call<Overview>("/api/overview"),
   health: () => call<Health>("/api/health"),
+  rules: () => call<Rulebook>("/api/compliance"),
   plan: () => call<{ date: string | null; items: PlanItem[]; counts: Record<string, number> }>("/api/plan"),
   calls: (params: Record<string, string>) => call<Call[]>("/api/calls?" + new URLSearchParams(params)),
   call: (id: string) => call<CallDetail>(`/api/calls/${id}`),

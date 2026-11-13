@@ -48,6 +48,7 @@ PACK = LanguagePack(
         "fallback": "Maaf kijiye, abhi technical dikkat hai. Hamari team aapse sampark karegi. "
                     "Dhanyavaad.",
         "stuck": "Maaf kijiye, main yeh nahi kar paayi. Kya main team se aapko call karwaun?",
+        "recorded": "Yeh call record ki ja rahi hai.",
         "moment": "Ji, ek second.",
         "handover": "Main aapko hamari team ke ek saathi se jod rahi hoon, aage ki baat wahi "
                     "karenge. Dhanyavaad.",

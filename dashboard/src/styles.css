@@ -195,6 +195,15 @@ a.button:hover { text-decoration: none; background: var(--brand-soft); }
 .mini { height: 64px; justify-content: flex-end; }
 .mini span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34px; }
 
+/* rules */
+table.rules td { vertical-align: top; }
+table.rules td.nowrap { white-space: nowrap; }
+table.rules td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.rules th:last-child { text-align: right; }
+.wrap-wide { white-space: normal; min-width: 240px; }
+tr.detail td { background: #f8f9fc; padding-top: 6px; }
+tr.detail code { margin: 0 6px 4px 0; display: inline-block; }
+
 /* status, loading, notices */
 .status { display: flex; flex-direction: column; gap: 5px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid #262e45; color: #aeb7cc; }
 .status-row { display: flex; gap: 7px; align-items: center; min-width: 0; }

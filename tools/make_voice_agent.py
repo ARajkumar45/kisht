@@ -15,11 +15,11 @@ from pathlib import Path
 
 import httpx
 
+from kisht.agent import greeting_for
 from kisht.config import load_config
 from kisht.languages import pack
 from kisht.ledger import SqliteLedger
 from kisht.lender import LenderRegistry
-from kisht.prompt import GREETING
 
 ROOT = Path(__file__).resolve().parent.parent
 IDS = ROOT / "data" / "bolna_agents.json"
@@ -28,9 +28,7 @@ IDS = ROOT / "data" / "bolna_agents.json"
 def config_for(lender, borrower: dict, bridge_url: str, speech) -> dict:
     lang = borrower["language"] if borrower["language"] in lender.languages.allowed \
         else lender.languages.default
-    greeting = GREETING[lang].format(agent=lender.agent_name,
-                                     lender=lender.name.split(" (")[0].replace(" Ltd", ""),
-                                     first_name=borrower["name"].split()[0])
+    greeting = greeting_for(lender, lang, borrower["name"].split()[0], "voice")
     sarvam_lang = pack(lang).sarvam
     # Hindi callers mix in English, which Sarvam's en-IN mode transcribes best (D84); Tamil
     # and Telugu need their own language code to be recognised at all.

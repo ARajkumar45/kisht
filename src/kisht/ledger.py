@@ -351,6 +351,13 @@ class SqliteLedger:
             "SELECT * FROM promises WHERE loan_id=? AND status='open' AND promised_date < ?",
             (loan_id, today.isoformat()))]
 
+    def open_escalations_for_borrower(self, borrower_id: str) -> list[dict[str, Any]]:
+        """Cases the human desk has not resolved yet, on any loan of this borrower."""
+        return [dict(r) for r in self.db.execute(
+            "SELECT e.* FROM escalations e JOIN loans l ON l.id = e.loan_id "
+            "WHERE l.borrower_id=? AND e.status != 'resolved' ORDER BY e.created_utc",
+            (borrower_id,))]
+
     def escalations(self, loan_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.db.execute(
             "SELECT * FROM escalations WHERE loan_id=? ORDER BY created_utc", (loan_id,))]

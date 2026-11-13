@@ -219,6 +219,24 @@ def cmd_review(args) -> int:
     return 0
 
 
+def cmd_compliance(args) -> int:
+    """Check the rules-to-code table against the code; --write regenerates docs/COMPLIANCE.md."""
+    from pathlib import Path
+
+    from kisht import compliance
+
+    book = compliance.load()
+    bad = compliance.problems(book)
+    for line in bad:
+        print("PROBLEM", line)
+    s = compliance.summary(book)
+    print(f"{sum(s.values())} rule groups: " + ", ".join(f"{v} {k}" for k, v in sorted(s.items())))
+    if args.write and not bad:
+        Path("docs/COMPLIANCE.md").write_text(compliance.render_markdown(book), encoding="utf-8")
+        print("wrote docs/COMPLIANCE.md")
+    return 1 if bad else 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
@@ -261,6 +279,8 @@ def main(argv=None) -> int:
     sm.add_argument("--at", help="fixed clock, e.g. 2026-11-11T10:00:00+05:30")
     rv = sub.add_parser("review", help="post-call QA review for calls not yet reviewed")
     rv.add_argument("--all", action="store_true", help="review every ended call again")
+    co = sub.add_parser("compliance", help="check the rules-to-code table; --write the doc")
+    co.add_argument("--write", action="store_true")
     sv = sub.add_parser("serve", help="dashboard + API")
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
@@ -273,7 +293,7 @@ def main(argv=None) -> int:
         logging.getLogger(noisy).setLevel(logging.WARNING)
     return {"health": cmd_health, "due": cmd_due, "chat": cmd_chat, "plan": cmd_plan,
             "bridge": cmd_bridge, "simulate": cmd_simulate, "review": cmd_review,
-            "serve": cmd_serve}[args.cmd](args)
+            "serve": cmd_serve, "compliance": cmd_compliance}[args.cmd](args)
 
 
 if __name__ == "__main__":

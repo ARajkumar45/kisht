@@ -20,6 +20,7 @@ RUN uv sync --frozen --no-dev
 COPY config.docker.yaml ./config.docker.yaml
 COPY lenders ./lenders
 COPY knowledge ./knowledge
+COPY compliance ./compliance
 COPY tools/make_loan_book.py ./tools/make_loan_book.py
 COPY results/evals ./results/evals
 COPY --from=dashboard /d/dist ./dashboard/dist

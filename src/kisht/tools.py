@@ -126,7 +126,10 @@ class ToolRunner:
         if not hits:
             return {"found": False, "message": "Nothing in the agreement matches. Do not guess: "
                     "offer to pass the question to the team."}
-        return {"found": True, "document": self.agreement.document,
+        officer = self.guard.lender.grievance_officer
+        extra = ({"grievance_officer": officer.line()}
+                 if officer and any("grievance" in s.title.lower() for s in hits) else {})
+        return {**extra, "found": True, "document": self.agreement.document,
                 "sections": [{"section": s.id, "title": s.title, "text": s.text} for s in hits],
                 "cite_as": "Section " + hits[0].id}
 

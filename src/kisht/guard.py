@@ -13,6 +13,8 @@ Rules (all limits come from the lender's YAML):
   R5 waiver / settlement / restructure / dispute / hardship: no tool can do them; the agent can
      only escalate them to a human.
   R6 nothing the agent says may contain a banned phrase (threats, shaming).
+  R7 no contact while the human desk has an open hardship, bereavement or dispute case.
+Each rule is traced to the regulation behind it in compliance/rbi-recovery-2027.yaml.
 Tools never take a loan or borrower id: they act only on the account bound to the
 conversation, so a prompt injection cannot reach another borrower's data.
 """
@@ -104,6 +106,11 @@ class PolicyGuard:
             raise GuardRefused("opted_out", "the borrower asked not to be contacted")
         if b["dnd"] and channel == "voice":
             raise GuardRefused("dnd", "number is on DND: no calls, chat only")
+        held = [e["reason"] for e in self.ledger.open_escalations_for_borrower(borrower_id)
+                if e["reason"] in self.lender.contact.hold_while_open]
+        if held:
+            raise GuardRefused("with_human_desk", f"the human desk has an open {held[0]} case "
+                               "for this borrower; no agent contact until it is resolved")
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_ago = now - timedelta(days=7)
         recent = [c for c in self.ledger.contacts_since(borrower_id, week_ago.isoformat())
@@ -290,8 +297,11 @@ class PolicyGuard:
         link = self.ledger.create_payment_link(loan_id=loan_id, amount=amount,
                                                idempotency_key=f"{call_id}:{amount}",
                                                call_id=call_id)
+        officer = self.lender.grievance_officer
+        text = (f"{self.lender.name.split(' (')[0]}: pay Rs {amount} here: {link['url']}"
+                + (f" | {officer.line()}" if officer else ""))
         return {"sent_to": "the borrower's registered mobile number", "amount": amount,
-                "link_id": link["id"], "already_sent": link["reused"]}
+                "link_id": link["id"], "already_sent": link["reused"], "message_text": text}
 
     # ---------- follow-up, escalation, opt-out ----------
 

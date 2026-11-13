@@ -1,0 +1,452 @@
+# Where each recovery-conduct rule is enforced in Kisht: the guard, the tests that prove it,
+# and the block codes it produces. Checked by tests/test_compliance.py on every run: a row
+# marked "enforced" must point at code and tests that exist. docs/COMPLIANCE.md is generated
+# from this file (`kisht compliance --write`).
+#
+# status: enforced        code stops it; tests prove it
+#         partly          part of the rule is enforced; `gap` says what is not
+#         gap             not built
+#         not_applicable  the rule is about something Kisht does not do (visits, possession ...)
+# kind:   rbi             required by the cited paragraph
+#         kisht           Kisht's own policy, stricter than or beside the rules (the number is ours)
+#
+# Not legal advice. `requires` is a plain-English paraphrase; read the linked text before
+# relying on it. Kisht is a demo with a fictional lender and synthetic borrowers.
+
+sources:
+  rbi2026:
+    title: >-
+      Reserve Bank of India (Non-Banking Financial Companies - Responsible Business Conduct)
+      Third Amendment Directions, 2026 (new Section J, paragraphs 100A-100AB)
+    number: RBI/2026-27/230
+    issued: 2026-08-06
+    effective: 2027-01-01
+    url: https://www.rbi.org.in/scripts/BS_CircularIndexDisplay.aspx?Id=13672
+    note: >-
+      The directions do not mention automated, AI or pre-recorded calls. Kisht applies the
+      rules for an "employee / recovery agent" to the AI agent. The bank version (RBI/2026-27/223)
+      has the same paragraphs numbered 454A-454AB.
+  rbi2022:
+    title: >-
+      Outsourcing of Financial Services - Responsibilities of regulated entities employing
+      Recovery Agents
+    number: RBI/2022-23/108
+    issued: 2022-08-12
+    effective: 2022-08-12
+    url: https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12378&Mode=0
+    note: In force today; replaced for NBFCs by the 2026 directions from their effective date.
+  dl2025:
+    title: Reserve Bank of India (Digital Lending) Directions, 2025
+    number: RBI/2025-26/36
+    issued: 2025-05-08
+    effective: 2025-05-08
+    url: https://www.rbi.org.in/Scripts/BS_CircularIndexDisplay.aspx?Id=12848
+    note: Only the paragraphs on recovery agents and grievance redressal are traced here.
+
+rules:
+  # ---------------- when and how often ----------------
+  - id: hours
+    source: rbi2026
+    para: "100Y(4)"
+    also: ["rbi2022 para 2", "100Z(4)"]
+    requires: Contact the borrower only between 08:00 and 19:00.
+    kind: rbi
+    status: enforced
+    how: >-
+      No conversation can start outside the lender's contact window, in the lender's own
+      time zone, on any channel. The window comes from the lender file, not from code.
+    guard: ["kisht.guard:PolicyGuard.check_contact"]
+    config: "lenders/demo-nbfc.yaml: contact.window"
+    codes: [outside_contact_window]
+    tests:
+      - tests/test_guard.py::test_contact_window_in_lender_time
+      - tests/test_guard.py::test_window_uses_india_time_even_if_the_clock_is_utc
+      - tests/test_agent.py::test_contact_rules_apply_before_a_conversation_starts
+
+  - id: hours-on-request
+    source: rbi2026
+    para: "100Y(4)"
+    requires: >-
+      Another time is allowed only if the borrower expressly asked for it; a borrower's
+      request to avoid a time is normally honoured.
+    kind: rbi
+    status: partly
+    how: >-
+      Kisht is stricter on the first half: it never contacts outside the window, even on
+      request. A request to be contacted later is recorded as a follow-up date.
+    gap: A follow-up has a date but no time of day, so "not in the mornings" is not stored.
+    guard: ["kisht.guard:PolicyGuard.schedule_followup"]
+    codes: [bad_followup_date]
+    tests: [tests/test_guard.py::test_followup_window]
+
+  - id: not-excessive
+    source: rbi2026
+    para: "100Z(4)"
+    also: ["rbi2022 para 2"]
+    requires: No excessive calling or messaging. The directions give no number.
+    kind: rbi
+    status: enforced
+    how: >-
+      Attempts per borrower are capped per day and per week across chat and voice. A note
+      written by the human desk does not count as an attempt.
+    guard: ["kisht.guard:PolicyGuard.check_contact"]
+    config: "lenders/demo-nbfc.yaml: contact.max_attempts_per_day, max_attempts_per_week"
+    codes: [daily_attempt_cap, weekly_attempt_cap]
+    tests:
+      - tests/test_guard.py::test_attempt_caps
+      - tests/test_ccai.py::test_a_desk_note_is_memory_not_a_contact_attempt
+
+  - id: attempt-numbers
+    source: rbi2026
+    para: "100Z(4)"
+    requires: (Kisht's choice) At most 2 attempts a day and 6 a week.
+    kind: kisht
+    status: enforced
+    how: The numbers are the fictional lender's policy; the rule only says "excessively".
+    guard: ["kisht.guard:PolicyGuard.check_contact"]
+    config: "lenders/demo-nbfc.yaml: contact.max_attempts_per_day, max_attempts_per_week"
+    codes: [daily_attempt_cap, weekly_attempt_cap]
+    tests: [tests/test_guard.py::test_attempt_caps]
+
+  - id: occasions-to-avoid
+    source: rbi2026
+    para: "100Y(6)"
+    requires: >-
+      Avoid calls on occasions such as a bereavement in the family, a medical emergency,
+      another calamity or a marriage function.
+    kind: rbi
+    status: partly
+    how: >-
+      When the borrower speaks of a death, illness or hardship, the agent can only hand the
+      case to the human desk, which ends the conversation. While that case is open, no
+      agent contact with that borrower can start.
+    gap: >-
+      Noticing the occasion is the model's judgement, not code, and there is no check for a
+      marriage function. The hold ends when the desk resolves the case, not after a set time.
+    guard:
+      - "kisht.guard:PolicyGuard.escalate_to_human"
+      - "kisht.guard:PolicyGuard.check_contact"
+    config: "lenders/demo-nbfc.yaml: contact.hold_while_open, needs_human"
+    codes: [with_human_desk]
+    tests:
+      - tests/test_compliance.py::test_no_agent_contact_while_the_desk_has_a_hardship_case
+      - tests/test_agent.py::test_escalation_ends_the_conversation
+
+  - id: opt-out-and-dnd
+    source: rbi2026
+    para: "100AB"
+    requires: Follow TRAI's commercial-communication rules (TCCCPR, 2018) as well.
+    kind: rbi
+    status: partly
+    how: >-
+      A number marked do-not-disturb is never called (chat only), and a borrower who asks
+      not to be contacted is opted out at once, without an identity check, and never
+      contacted again.
+    gap: >-
+      Number series, consent registration and templates are the telephony provider's side
+      and are not modelled. Not checked against the TRAI text.
+    guard:
+      - "kisht.guard:PolicyGuard.check_contact"
+      - "kisht.guard:PolicyGuard.opt_out"
+    codes: [dnd, opted_out]
+    tests:
+      - tests/test_guard.py::test_dnd_blocks_calls_but_not_chat
+      - tests/test_guard.py::test_opted_out_borrower_is_never_contacted
+
+  # ---------------- who hears what ----------------
+  - id: only-the-borrower
+    source: rbi2026
+    para: "100Y(1)"
+    requires: Discuss the loan dues only with the borrower or guarantor.
+    kind: rbi
+    status: enforced
+    how: >-
+      Until a date of birth or PIN code matches, no tool returns an account detail and any
+      reply that names an amount or says a payment is late is replaced before it is said.
+      Three misses lock the conversation. Someone who is not the borrower is handed to the
+      desk with nothing shared. The agent may not offer a date of birth or PIN itself.
+    guard:
+      - "kisht.guard:PolicyGuard.verify_identity"
+      - "kisht.agent:Agent._violation"
+    codes: [identity_not_verified, identity_mismatch, identity_locked, leak_before_identity, guessed_identity]
+    tests:
+      - tests/test_guard.py::test_no_account_detail_before_identity
+      - tests/test_guard.py::test_identity_locks_after_three_misses_and_never_reveals
+      - tests/test_agent.py::test_greeting_names_the_borrower_and_reveals_nothing
+      - tests/test_agent.py::test_unsafe_replies_are_replaced_before_anyone_sees_them
+      - tests/test_streaming.py::test_agent_never_offers_a_date_of_birth_or_pin_before_identity
+      - tests/test_streaming.py::test_a_blocked_sentence_is_never_said_and_the_safe_line_follows
+
+  - id: data-only-as-needed
+    source: rbi2026
+    para: "100O"
+    requires: Share borrower data only as far as the recovery task needs, with safeguards against misuse.
+    kind: rbi
+    status: enforced
+    how: >-
+      Tools act only on the account bound to the conversation and take no loan or borrower
+      id, so a prompt cannot reach another account. The model sees no amount before identity.
+      Phone numbers are masked in the audit log; identity answers are masked in logs.
+    guard:
+      - "kisht.guard:PolicyGuard.start_contact"
+      - "kisht.audit:mask_phone"
+    codes: [loan_mismatch]
+    tests:
+      - tests/test_guard.py::test_loan_must_belong_to_the_borrower
+      - tests/test_agent.py::test_no_amounts_in_the_prompt_before_identity
+      - tests/test_audit.py::test_phone_numbers_are_masked
+      - tests/test_ccai.py::test_identity_answers_are_masked_in_the_call_log_and_audit
+      - tests/test_voice_bridge.py::test_a_run_id_is_bound_to_its_borrower_and_a_closed_call_is_not_reused
+
+  # ---------------- what may be said ----------------
+  - id: civil
+    source: rbi2026
+    para: "100Y(2)"
+    requires: Interact with the borrower in a civil manner.
+    kind: rbi
+    status: partly
+    how: >-
+      Threats and shaming phrases are blocked in every reply. Every finished conversation is
+      scored on "respectful, no pressure" by the AI reviewer, with a human check beside it.
+    gap: Tone beyond the listed phrases is judged after the call, not stopped during it.
+    guard: ["kisht.guard:PolicyGuard.check_reply"]
+    config: "lenders/demo-nbfc.yaml: banned_phrases"
+    codes: [banned_phrase]
+    tests:
+      - tests/test_guard.py::test_banned_phrases_in_replies
+      - tests/test_ccai.py::test_human_qa_review_and_agreement_with_the_ai
+
+  - id: no-threats
+    source: rbi2026
+    para: "100Z(1), 100Z(5), 100Z(7)"
+    also: ["rbi2022 para 2"]
+    requires: No threatening or abusive language, no threatening calls, no threat of violence.
+    kind: rbi
+    status: partly
+    how: >-
+      A reply containing a listed threat (police, jail, seizing property, coming to the
+      house) is replaced by a polite line before the borrower hears it, in chat and, sentence
+      by sentence, on a call. A supervisor's note cannot switch this off.
+    gap: A phrase list catches the listed threats in the listed wording only.
+    guard: ["kisht.guard:PolicyGuard.check_reply"]
+    config: "lenders/demo-nbfc.yaml: banned_phrases"
+    codes: [banned_phrase]
+    tests:
+      - tests/test_guard.py::test_banned_phrases_in_replies
+      - tests/test_agent.py::test_unsafe_replies_are_replaced_before_anyone_sees_them
+      - tests/test_ccai.py::test_supervisor_note_cannot_bypass_the_reply_checks
+
+  - id: not-anonymous
+    source: rbi2026
+    para: "100Z(5)"
+    requires: No anonymous calls.
+    kind: rbi
+    status: enforced
+    how: The greeting is written by code, not by the model, and names the agent and the lender.
+    guard: ["kisht.agent:greeting_for"]
+    codes: []
+    tests: [tests/test_agent.py::test_greeting_names_the_borrower_and_reveals_nothing]
+
+  - id: no-third-parties
+    source: rbi2026
+    para: "100Z(6)"
+    also: ["rbi2022 para 2"]
+    requires: >-
+      Do not intimidate or harass the borrower or their relatives, referees, friends or
+      co-workers; no public humiliation or intrusion into privacy.
+    kind: rbi
+    status: enforced
+    how: >-
+      The agent has no way to contact anyone but the borrower: there is no such tool, and a
+      conversation is bound to one borrower. Saying that family or an employer will be told
+      is a banned phrase.
+    guard:
+      - "kisht.guard:PolicyGuard.start_contact"
+      - "kisht.guard:PolicyGuard.check_reply"
+    config: "lenders/demo-nbfc.yaml: banned_phrases"
+    codes: [banned_phrase]
+    tests:
+      - tests/test_guard.py::test_banned_phrases_in_replies
+      - tests/test_guard.py::test_loan_must_belong_to_the_borrower
+
+  - id: no-false-statements
+    source: rbi2026
+    para: "100Z(8)"
+    also: ["rbi2022 para 2"]
+    requires: No false or misleading statements to the borrower, for example about the debt or its consequences.
+    kind: rbi
+    status: partly
+    how: >-
+      Amounts and dates come only from the ledger through tools. Statements only code may
+      make are blocked unless they are true: "your promise is saved", "a link was sent",
+      "the charge is waived", "your payment was received". On a call, words written before
+      a tool has run are not spoken early.
+    gap: >-
+      Other false statements are not checked in the call; the model still makes date
+      mistakes in its own wording (seen live).
+    guard: ["kisht.agent:Agent._violation"]
+    codes: [false_promise_claim, unbacked_link_claim, false_claim]
+    tests:
+      - tests/test_agent.py::test_claims_only_code_can_make_are_replaced
+      - tests/test_agent.py::test_link_claim_that_persists_is_replaced
+      - tests/test_agent.py::test_confirmation_claim_without_a_saved_promise_is_replaced
+      - tests/test_streaming.py::test_words_written_before_a_tool_call_are_not_said_early
+
+  - id: social-media
+    source: rbi2026
+    para: "100Z(2), 100Z(3)"
+    requires: No posting of recordings or personal details on social media; no inappropriate messages.
+    kind: rbi
+    status: not_applicable
+    how: Kisht has no social-media channel and no tool that posts anywhere.
+
+  # ---------------- records ----------------
+  - id: call-records
+    source: rbi2026
+    para: "100P"
+    requires: >-
+      Record the time, number and content of calls with the borrower, keep the record for
+      six months, and take precautions such as telling the borrower the call is recorded.
+    kind: rbi
+    status: partly
+    how: >-
+      Every conversation is kept with its time, every turn, every tool call and every guard
+      decision, and nothing deletes them. On a phone call the greeting says the call is
+      recorded before anything else.
+    gap: >-
+      Kisht keeps the words, not the audio; audio recording is the telephony layer's. There
+      is no retention schedule: records are simply never deleted.
+    guard:
+      - "kisht.agent:greeting_for"
+      - "kisht.audit:AuditLog.record"
+    config: "lenders/demo-nbfc.yaml: contact.recording_notice"
+    codes: []
+    tests:
+      - tests/test_compliance.py::test_a_phone_call_starts_by_saying_it_is_recorded
+      - tests/test_guard.py::test_every_decision_is_audited_with_its_rule
+      - tests/test_wrapup.py::test_audit_trail_is_read_from_disk_across_processes
+
+  # ---------------- distress and complaints ----------------
+  - id: financial-distress
+    source: rbi2026
+    para: "100D"
+    requires: >-
+      The recovery policy has a structured way of handling financial distress, with
+      engagement before escalation and guidance on the options, and covers the death of a
+      borrower.
+    kind: rbi
+    status: enforced
+    how: >-
+      Waiver, settlement, restructuring, hardship and bereavement cannot be decided by the
+      agent: no tool exists for them. It can only hand the case to the human desk, which
+      routes it to a named team with a deadline; the desk's resolution is what the agent
+      reads next time.
+    guard: ["kisht.guard:PolicyGuard.escalate_to_human"]
+    config: "lenders/demo-nbfc.yaml: needs_human, desk_teams, desk_sla_hours"
+    codes: [bad_reason]
+    tests:
+      - tests/test_guard.py::test_escalation_reasons_and_no_identity_needed
+      - tests/test_ccai.py::test_desk_deadline_and_resolution_becomes_memory
+      - tests/test_ccai.py::test_take_over_stops_the_model_and_lands_on_the_desk
+
+  - id: grievance-details
+    source: rbi2026
+    para: "100AA"
+    also: ["dl2025 para 11"]
+    requires: >-
+      Every recovery communication carries the name, email, telephone number and address of
+      the grievance redressal officer.
+    kind: rbi
+    status: partly
+    how: >-
+      The payment-link message carries the officer's details, and the agent is given them
+      whenever the borrower asks how to complain.
+    gap: A phone call does not state them unless asked.
+    guard:
+      - "kisht.guard:PolicyGuard.send_payment_link"
+      - "kisht.tools:ToolRunner._lookup"
+    config: "lenders/demo-nbfc.yaml: grievance_officer"
+    codes: []
+    tests: [tests/test_compliance.py::test_written_messages_and_complaint_answers_carry_the_grievance_officer]
+
+  - id: ombudsman
+    source: dl2025
+    para: "11(iv)"
+    requires: If a complaint is not resolved within 30 days, the borrower can go to the RBI Ombudsman.
+    kind: rbi
+    status: partly
+    how: The loan agreement the agent answers from says so (section 10), and the agent must cite the section.
+    gap: Kisht has no complaint register, so the 30 days are not tracked.
+    guard: ["kisht.tools:ToolRunner._lookup"]
+    config: "knowledge/demo-nbfc.yaml: section 10"
+    codes: []
+    tests: [tests/test_compliance.py::test_written_messages_and_complaint_answers_carry_the_grievance_officer]
+
+  - id: agent-details-first
+    source: dl2025
+    para: "8(v)"
+    also: ["100L", "100M"]
+    requires: Before a recovery agent contacts the borrower, the borrower is told who the agent is, by email or SMS.
+    kind: rbi
+    status: gap
+    how: Not built. Kisht sends no message before the first contact.
+
+  # ---------------- not about a phone or chat agent ----------------
+  - id: visits
+    source: rbi2026
+    para: "100L, 100X, 100Y(3), 100Y(5), 100Y(7), 100Y(9)"
+    requires: Rules for visits in person, identity cards, place of contact and receipts for cash.
+    kind: rbi
+    status: not_applicable
+    how: Kisht makes no visits and takes no cash; it only sends a payment link.
+
+  - id: possession-and-devices
+    source: rbi2026
+    para: "100R, 100S, 100T, 100U"
+    requires: Rules for taking possession of security and for restricting a financed mobile device.
+    kind: rbi
+    status: not_applicable
+    how: Kisht has no tool for either.
+
+  - id: agencies
+    source: rbi2026
+    para: "100E, 100H, 100I, 100J, 100K, 100Q, 100V"
+    requires: Due diligence, certification, code of conduct, disclosure and incentives for recovery agencies and their agents.
+    kind: rbi
+    status: not_applicable
+    how: >-
+      These are the lender's duties toward human agencies. Open question the directions do
+      not answer: whether an AI caller needs an equivalent of the agent certificate (100I).
+
+  # ---------------- Kisht's own rules, beside the regulation ----------------
+  - id: promise-limits
+    source: rbi2026
+    para: "100Z(8)"
+    requires: (Kisht's choice) A promise to pay must be within the lender's date and amount limits, and is saved only after the borrower's own clear yes to a read-back.
+    kind: kisht
+    status: enforced
+    how: The model proposes; code checks the limits, reads the promise back and saves it only on a clear yes.
+    guard:
+      - "kisht.guard:PolicyGuard.propose_promise"
+      - "kisht.guard:PolicyGuard.confirm_promise"
+    config: "lenders/demo-nbfc.yaml: promises"
+    codes: [date_out_of_policy, amount_out_of_policy, promise_exists, borrower_not_confirmed]
+    tests:
+      - tests/test_guard.py::test_promise_limits
+      - tests/test_guard.py::test_promise_is_saved_only_after_the_borrowers_yes
+      - tests/test_agent.py::test_a_yes_that_changes_the_date_is_not_a_yes
+
+  - id: human-can-step-in
+    source: rbi2026
+    para: "100V"
+    requires: (Kisht's choice) A supervisor can watch any live conversation, steer the agent or take it over.
+    kind: kisht
+    status: enforced
+    how: Both actions go through the guard and the audit log; a take-over stops the model at once.
+    guard:
+      - "kisht.guard:PolicyGuard.coach"
+      - "kisht.guard:PolicyGuard.take_over"
+    codes: [already_escalated]
+    tests:
+      - tests/test_ccai.py::test_take_over_stops_the_model_and_lands_on_the_desk
+      - tests/test_ccai.py::test_supervisor_note_reaches_the_model_once_and_is_logged

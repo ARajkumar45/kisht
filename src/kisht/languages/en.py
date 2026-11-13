@@ -39,6 +39,7 @@ PACK = LanguagePack(
         "read_back": "So you will pay {read_back}. Is that right?",
         "fallback": "Sorry, I'm having a technical problem. Our team will contact you. Thank you.",
         "stuck": "Sorry, I couldn't sort that out. Shall I ask our team to call you?",
+        "recorded": "This call is recorded.",
         "moment": "One moment, please.",
         "handover": "I'm connecting you with a colleague from our team, who will take it "
                     "from here. Thank you.",

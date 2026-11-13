@@ -47,6 +47,22 @@ class Contact(_Strict):
     max_attempts_per_day: int = Field(ge=1)
     max_attempts_per_week: int = Field(ge=1)
     channels: list[Literal["chat", "voice"]] = Field(min_length=1)
+    # While the human desk has an open case of one of these kinds, the agent does not contact
+    # the borrower at all (RBI 2026 recovery directions, 100Y(6): bereavement, medical
+    # emergencies and the like are occasions to avoid).
+    hold_while_open: list[str] = ["hardship", "bereavement", "dispute"]
+    recording_notice: bool = True      # voice: say that the call is recorded (100P)
+
+
+class GrievanceOfficer(_Strict):
+    """Carried on every written recovery message (RBI 2026 recovery directions, 100AA)."""
+    name: str
+    email: str
+    phone: str
+    address: str
+
+    def line(self) -> str:
+        return (f"Grievance officer: {self.name}, {self.email}, {self.phone}, {self.address}")
 
 
 class Promises(_Strict):
@@ -94,6 +110,7 @@ class Lender(_Strict):
     needs_human: list[HumanReason]
     banned_phrases: list[str]
     escalation_desk: str
+    grievance_officer: GrievanceOfficer | None = None
     desk_teams: dict[str, str] = {}               # escalation reason -> human team
     desk_sla_hours: dict[str, float] = {}         # escalation reason -> hours to resolve
     qa_scorecard: list[QAItem] = DEFAULT_SCORECARD

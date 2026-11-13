@@ -10,6 +10,7 @@ import Live from "./pages/Live";
 import Overview from "./pages/Overview";
 import Plan from "./pages/Plan";
 import Quality from "./pages/Quality";
+import Rules from "./pages/Rules";
 import { api } from "./api";
 import { useLoad } from "./ui";
 
@@ -20,6 +21,7 @@ const NAV = [
   ["/calls", "Call log"],
   ["/desk", "Human desk"],
   ["/quality", "Quality"],
+  ["/rules", "Rules"],
   ["/chat", "Test chat"],
 ] as const;
 
@@ -75,6 +77,7 @@ function App() {
             <Route path="/calls/:id" element={<CallDetail />} />
             <Route path="/desk" element={<Desk />} />
             <Route path="/quality" element={<Quality />} />
+            <Route path="/rules" element={<Rules />} />
             <Route path="/chat" element={<Chat />} />
           </Routes>
         </main>
