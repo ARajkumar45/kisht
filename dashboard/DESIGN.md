@@ -15,7 +15,8 @@ Every colour, space, radius, text size, shadow and timing is a token on `:root`.
 | | `--line-strong` | #868fa3 | input and segmented-button borders (3.2:1) |
 | Text | `--ink` | #1d2433 | body text (15.5:1 on panel) |
 | | `--muted` | #5f677a | secondary text (4.7:1 or more on every surface) |
-| | `--on-brand` | #ffffff | text on brand or dark backgrounds |
+| | `--on-brand` | #ffffff | text on a brand-coloured background (dark in the dark theme) |
+| | `--on-dark` | #ffffff | text on the sidebar and phone header, which are dark in both themes |
 | Brand | `--brand` / `--brand-soft` | #2f5bea / #e9efff | links, primary button, selected, focus |
 | Status | `--good` / `-soft` / `-accent` | #137a4b / #e3f5ec / #2fbf71 | success |
 | | `--warn` / `-soft` / `-accent` | #9a6200 / #fff3dc / #e3a008 | caution |
@@ -25,15 +26,28 @@ Every colour, space, radius, text size, shadow and timing is a token on `:root`.
 | | `--side-hover`, `--side-active` | #222a3e, #2a3350 | nav link states, divider |
 | Space | `--space-1` to `--space-7` | 2, 4, 6, 8, 12, 16, 24px | all padding, margin, gap |
 | Radius | `--radius-xs`, `-sm`, `--radius`, `-lg`, `-pill` | 4, 7, 10, 18, 999px | bars, controls, cards, phone, badges |
-| Type | `--text-2xs` to `--text-xl` | 10, 11, 12, 14, 22, 26px | meta, chip, small, body, h1, tile value |
+| Type | `--text-2xs` to `--text-xl` | 10, 11, 12, 14, 16, 22, 26px | meta, chip, small, body, dialog title, h1, tile value |
 | | `--font`, `--font-mono` | system sans, monospace | text, tool names |
-| Shadow | `--shadow` | 0 1px 2px, 6% | cards, tiles, chat bubbles |
+| Shadow | `--shadow`, `--shadow-lg` | 0 1px 2px, 6%; 0 12px 32px, 18% | cards, tiles, chat bubbles; dialog |
+| Overlay | `--overlay` | ink at 50% | behind a dialog |
+| Size | `--side-width`, `--scroll-max` | 210px, 640px | sidebar; lists that scroll inside a card |
 | Focus | `--focus`, `--focus-ring` | brand, 3px brand-soft | outline, input halo |
-| Motion | `--motion-loop` | 1.4s | live pulse, skeleton shimmer |
+| Motion | `--motion-loop`, `--motion-fast` | 1.4s, 120ms | live pulse, skeleton shimmer; hover and focus changes |
 
 Status colours come in three strengths: the plain one for text and borders, `-soft`
 for backgrounds behind that text, `-accent` for small non-text marks (dots, bars).
 The test chat's four phone colours (`--phone-*`) are set on `.phone` and used nowhere else.
+
+## Themes
+
+Light is the default. Dark follows the system setting (`prefers-color-scheme: dark`) and is
+the same tokens with other values, set once in `styles.css`; no component has a dark rule of
+its own except the phone mock-up's two colours. Contrast in dark: `--ink` 13:1 and `--muted`
+6:1 on `--panel`; status text 5:1 or more on its `-soft` background. To add a colour, add it
+to both themes or it will be wrong in one.
+
+Also handled: Windows high-contrast mode (`forced-colors`) keeps dots, bars and badges
+visible; print hides the navigation, filters and buttons.
 
 ## Components
 
@@ -51,6 +65,10 @@ The test chat's four phone colours (`--phone-*`) are set on `.phone` and used no
 | Nav | `.side a` | link | hover, focus-visible, `.active` |
 | Pick list | `.queue li`, `.people li` | item | hover, focus-visible, `.sel` + `aria-current` |
 | Trace row | `.span-row` | by span name, `.bad` | hover, focus-visible, `aria-expanded` |
+| Field | `Field` | text, password | hint, error (`aria-invalid`, error tied to the input), disabled |
+| Confirm dialog | `Confirm` | `danger`, `primary` | native `<dialog>`: focus stays inside, Escape closes, focus returns; Cancel is focused first |
+| Link button | `button.link` | one | hover, focus-visible; for small actions in the sidebar (Sign out) |
+| Sign-in | `.sign-in` | one | checking, wrong token (inline error) |
 | Banner | `.banner` | error | `role="alert"`; used for load errors and stale data |
 | Inline error | `.error` | error | `role="alert"` |
 | Skeleton | `Loading` | loading, error | `role="status"`; shimmer stops under reduced motion |
@@ -83,7 +101,8 @@ click, and Enter/Space handling in one place.
 - Landmarks: skip link, `nav` (labelled "Main"), `main`. Page language is `en`.
 - Table headers have `scope="col"`.
 - Colour is never the only signal: badges carry words, pass/fail marks carry labels.
-- Motion: only the live pulse and the skeleton move; both stop under `prefers-reduced-motion`.
+- Motion: the live pulse and the skeleton move, and hover changes fade over 120ms; all of it stops under `prefers-reduced-motion`.
+- No browser pop-ups: `window.alert`, `confirm` and `prompt` are not used. Errors are a banner or an inline error; a question is a `Confirm` dialog.
 
 ## Do
 

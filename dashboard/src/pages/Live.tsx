@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Call } from "../api";
-import { Badge, Card, CallLink, LANG, Loading, Page, human, time, useLoad } from "../ui";
+import { Badge, Card, CallLink, Confirm, LANG, Loading, Page, human, time, useLoad } from "../ui";
 
 const ALERT: Record<string, string> = {
   banned_phrase: "Threat or banned phrase blocked",
@@ -20,6 +20,7 @@ function Controls({ call, onDone }: { call: Call; onDone: () => void }) {
   const [note, setNote] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   const by = "Supervisor";
   const run = async (f: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -40,8 +41,12 @@ function Controls({ call, onDone }: { call: Call; onDone: () => void }) {
       <div className="form-row">
         <input aria-label="Private note to the AI" placeholder="Private note to the AI, e.g. offer a part payment" value={note} onChange={(e) => setNote(e.target.value)} />
         <button className="secondary" disabled={busy || !note.trim()} onClick={() => run(() => api.coach(call.call_id, note, by), "Note queued for the AI's next reply.")}>Coach</button>
-        <button className="danger" disabled={busy} onClick={() => { if (window.confirm("Stop the AI and hand this conversation to the human desk?")) run(() => api.takeOver(call.call_id, note, by), "Taken over. The case is on the human desk."); }}>Take over</button>
+        <button className="danger" disabled={busy} onClick={() => setAsking(true)}>Take over</button>
       </div>
+      <Confirm open={asking} title="Take over this conversation?" action="Take over" onClose={() => setAsking(false)}
+        onConfirm={() => run(() => api.takeOver(call.call_id, note, by), "Taken over. The case is on the human desk.")}>
+        The AI stops replying and the case goes to the human desk. This cannot be undone from here.
+      </Confirm>
       {msg && <div className="muted small" role="status">{msg}</div>}
     </div>
   );

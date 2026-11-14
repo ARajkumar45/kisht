@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import "./styles.css";
@@ -11,8 +11,8 @@ import Overview from "./pages/Overview";
 import Plan from "./pages/Plan";
 import Quality from "./pages/Quality";
 import Rules from "./pages/Rules";
-import { api } from "./api";
-import { useLoad } from "./ui";
+import { SIGN_IN, api, signIn, signOut, type Me } from "./api";
+import { Field, human, useLoad } from "./ui";
 
 const NAV = [
   ["/", "Overview"],
@@ -48,7 +48,51 @@ function Row({ ok, label, warn }: { ok: boolean; label: string; warn?: boolean }
   );
 }
 
+/** Shown when the server asks for a token (it does outside demo mode). */
+function SignIn({ onDone }: { onDone: (me: Me) => void }) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    signIn(token);
+    try {
+      onDone(await api.me());
+    } catch {
+      setError("That token was not accepted. Check it and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <main className="sign-in">
+      <form className="card" onSubmit={submit}>
+        <div className="brand-mark">
+          <div className="logo" aria-hidden="true">K</div>
+          <h1>Sign in to Kisht</h1>
+        </div>
+        <Field id="token" label="Access token" type="password" autoComplete="current-password" autoFocus required
+          value={token} onChange={(e) => setToken(e.target.value)} error={error}
+          hint="Your administrator gives you a token for your role. It stays in this tab only." />
+        <button disabled={busy || !token.trim()}>{busy ? "Checking…" : "Sign in"}</button>
+      </form>
+    </main>
+  );
+}
+
 function App() {
+  // undefined: still asking. null: the server wants a token. Otherwise: who we are.
+  const [me, setMe] = useState<Me | null | undefined>(undefined);
+  useEffect(() => {
+    const ask = () => setMe(null);
+    window.addEventListener(SIGN_IN, ask);
+    api.me().then(setMe, () => setMe((m) => (m === undefined ? null : m)));
+    return () => window.removeEventListener(SIGN_IN, ask);
+  }, []);
+  if (me === undefined) return null;
+  if (me === null) return <SignIn onDone={setMe} />;
   return (
     <BrowserRouter>
       <div className="app">
@@ -66,7 +110,13 @@ function App() {
           ))}
           <div className="side-foot small">
             <Status />
-            Synthetic borrowers only.<br />AI decides, code guards.
+            {me.login && (
+              <div className="who-am-i">
+                <span>Signed in as {human(me.role)}</span>
+                <button className="link" onClick={signOut}>Sign out</button>
+              </div>
+            )}
+            {me.mode === "demo" ? "Synthetic borrowers only." : "Production mode."}<br />AI decides, code guards.
           </div>
         </nav>
         <main id="main" tabIndex={-1}>

@@ -207,29 +207,60 @@ export type Quality = {
   claims: Claims;
 };
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+// The access token lives in this tab only (sessionStorage): closing the tab signs out.
+const TOKEN = "kisht-token";
+export const SIGN_IN = "kisht:sign-in";
+export type Role = "viewer" | "agent" | "supervisor";
+export type Me = { login: boolean; role: Role; mode: string };
+export const signIn = (token: string) => sessionStorage.setItem(TOKEN, token.trim());
+export const signOut = () => { sessionStorage.removeItem(TOKEN); window.dispatchEvent(new Event(SIGN_IN)); };
+const auth = (): Record<string, string> => {
+  const t = sessionStorage.getItem(TOKEN);
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
+
+async function send(path: string, init?: RequestInit): Promise<Response> {
+  const go = () => fetch(path, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...auth(), ...(init?.headers ?? {}) },
   });
+  const res = await go();
+  if (res.status === 401) {
+    // The server wants a token (it does outside demo mode): the app shows the sign-in screen.
+    sessionStorage.removeItem(TOKEN);
+    window.dispatchEvent(new Event(SIGN_IN));
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail ?? `${res.status} ${res.statusText}`);
   }
-  return res.json() as Promise<T>;
+  return res;
+}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await send(path, init)).json() as Promise<T>;
 }
 
 const post = <T,>(path: string, body?: unknown) =>
   call<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
 
 export const api = {
+  me: () => call<Me>("/api/me"),
   overview: () => call<Overview>("/api/overview"),
   health: () => call<Health>("/api/health"),
   rules: () => call<Rulebook>("/api/compliance"),
   plan: () => call<{ date: string | null; items: PlanItem[]; counts: Record<string, number> }>("/api/plan"),
   calls: (params: Record<string, string>) => call<Call[]>("/api/calls?" + new URLSearchParams(params)),
   call: (id: string) => call<CallDetail>(`/api/calls/${id}`),
-  callsCsv: (params: Record<string, string>) => "/api/export/calls.csv?" + new URLSearchParams(params),
+  // A plain link cannot carry the token, so the file is fetched and then saved.
+  callsCsv: async (params: Record<string, string>) => {
+    const blob = await (await send("/api/export/calls.csv?" + new URLSearchParams(params))).blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "kisht-calls.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
   coach: (id: string, note: string, by: string) => post<{ queued: boolean }>(`/api/calls/${id}/coach`, { note, by }),
   takeOver: (id: string, note: string, by: string) => post<{ escalation_id: string }>(`/api/calls/${id}/takeover`, { note, by }),
   humanQa: (id: string, labels: Record<string, QAResult>, by: string) => post<Review>(`/api/calls/${id}/qa`, { labels, by }),

@@ -9,6 +9,7 @@ export default function Calls() {
   const [outcome, setOutcome] = useState("");
   const [language, setLanguage] = useState("");
   const [flagged, setFlagged] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const params: Record<string, string> = {};
   if (q) params.q = q;
   if (outcome) params.outcome = outcome;
@@ -29,8 +30,9 @@ export default function Calls() {
           {Object.entries(LANG).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <label className="check"><input type="checkbox" checked={flagged} onChange={(e) => setFlagged(e.target.checked)} /> Only calls where code blocked something</label>
-        <a className="button secondary" href={api.callsCsv(params)} download>Export CSV</a>
+        <button className="secondary" onClick={() => { setExportError(null); api.callsCsv(params).catch((e: Error) => setExportError(e.message)); }}>Export CSV</button>
       </div>
+      {exportError && <div className="banner" role="alert">The call log was not exported: {exportError}</div>}
       <Card>
         {!data ? <Loading error={error} /> : (
           <table className="clickable">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 /** Load data once, or every `pollMs` (live views). */
@@ -179,4 +179,42 @@ export function CallLink({ id, children }: { id: string; children?: ReactNode })
 
 export function pct(n: number | null | undefined): string {
   return n == null ? "–" : `${n}%`;
+}
+
+/** A labelled input with an optional hint and error. The label is always visible; the error
+ * is tied to the input so a screen reader reads it with the field. */
+export function Field({ label, hint, error, id, ...input }: { label: string; hint?: string; error?: string | null; id: string } & InputHTMLAttributes<HTMLInputElement>) {
+  const notes = [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <input id={id} aria-describedby={notes} aria-invalid={error ? true : undefined} {...input} />
+      {hint && <div id={`${id}-hint`} className="muted small">{hint}</div>}
+      {error && <div id={`${id}-error`} className="error" role="alert">{error}</div>}
+    </div>
+  );
+}
+
+/** Ask before an action that cannot be taken back. The browser's own <dialog> keeps focus
+ * inside, closes on Escape and gives focus back to the button that opened it. */
+export function Confirm({ open, title, children, action, tone = "danger", onConfirm, onClose }: {
+  open: boolean; title: string; children: ReactNode; action: string; tone?: "danger" | "primary"; onConfirm: () => void; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+  return (
+    <dialog ref={ref} className="dialog" aria-labelledby="confirm-title" onClose={onClose}>
+      <h2 id="confirm-title">{title}</h2>
+      <div className="dialog-body">{children}</div>
+      <div className="dialog-actions">
+        <button className="secondary" autoFocus onClick={onClose}>Cancel</button>
+        <button className={tone === "danger" ? "danger" : undefined} onClick={() => { onClose(); onConfirm(); }}>{action}</button>
+      </div>
+    </dialog>
+  );
 }
