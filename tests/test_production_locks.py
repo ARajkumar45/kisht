@@ -157,3 +157,97 @@ def test_an_unheard_read_back_cannot_be_confirmed_later(guard, calls, account):
     calls.append(agent.call_id, {"role": "assistant", "content": "Rs 4,500 on 14 November?"})
     assert bridge.discard_reply(agent.call_id)
     assert calls.get(agent.call_id, "pending_promise") is None
+
+
+# ---------- the dashboard has a login, with roles ----------
+
+VIEW, AGENT, BOSS = "viewer-token-0123456789", "agent-token-0123456789", "boss-token-0123456789"
+
+
+def _api(guard, calls, ledger, tokens):
+    from kisht.api import load_api_tokens
+    rt = Runtime(cfg=load_config("config.yaml"), lenders=LenderRegistry.from_dir("lenders"),
+                 ledger=ledger, calls=calls, audit=AuditLog(), guards={"demo-nbfc": guard},
+                 agreements={"demo-nbfc": Agreement.load("knowledge/demo-nbfc.yaml")},
+                 insights=InsightsStore(), models=None)
+    return TestClient(create_api(rt, load_api_tokens(tokens)))
+
+
+def test_with_tokens_set_nothing_is_readable_without_one(guard, calls, ledger, account):
+    c = _api(guard, calls, ledger, f"viewer:{VIEW},agent:{AGENT},supervisor:{BOSS}")
+    assert c.get("/api/calls").status_code == 401
+    assert c.get("/api/calls", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert c.get("/api/health").status_code == 200                # for probes; no borrower data
+    assert c.get("/api/calls", headers={"Authorization": f"Bearer {VIEW}"}).status_code == 200
+
+
+def test_each_role_can_do_only_its_own_work(guard, calls, ledger, account):
+    c = _api(guard, calls, ledger, f"viewer:{VIEW},agent:{AGENT},supervisor:{BOSS}")
+    def as_(token):
+        return {"Authorization": f"Bearer {token}"}
+    eid = ledger.add_escalation(loan_id=account[1], reason="hardship", summary="Lost job")
+    assert c.post(f"/api/desk/{eid}", json={"status": "in_progress"},
+                  headers=as_(VIEW)).status_code == 403            # a viewer changes nothing
+    assert c.post(f"/api/desk/{eid}", json={"status": "in_progress"},
+                  headers=as_(AGENT)).status_code == 200
+    assert c.get("/api/export/calls.csv", headers=as_(AGENT)).status_code == 403
+    assert c.get("/api/export/calls.csv", headers=as_(BOSS)).status_code == 200
+    assert c.post("/api/calls/x/coach", json={"note": "hi"}, headers=as_(AGENT)).status_code == 403
+
+
+def test_a_weak_or_misspelt_token_stops_the_start():
+    from kisht.api import load_api_tokens
+    for bad in ("viewer:short", "admin:0123456789abcdefgh", "0123456789abcdefgh"):
+        with pytest.raises(ValueError):
+            load_api_tokens(bad)
+    assert load_api_tokens("") == {}
+
+
+def test_serve_refuses_production_without_tokens(production_config, monkeypatch):
+    monkeypatch.delenv("KISHT_API_TOKENS", raising=False)
+    with pytest.raises(SystemExit) as e:
+        cli.main(["--config", production_config, "serve"])
+    assert "KISHT_API_TOKENS" in str(e.value)
+
+
+def test_a_spreadsheet_formula_in_a_cell_is_exported_as_text():
+    from kisht.api import csv_safe
+    assert csv_safe('=HYPERLINK("http://x","pay")') == "'=HYPERLINK(\"http://x\",\"pay\")"
+    assert csv_safe("+91 98") == "'+91 98" and csv_safe("Asha") == "Asha" and csv_safe(3) == 3
+
+
+# ---------- identity guesses do not reset by starting a new conversation ----------
+
+def test_three_wrong_identity_answers_lock_the_next_conversation_too(guard, calls, account):
+    first = calls.start_call("demo-nbfc", "hi")
+    guard.start_contact(first, borrower_id=account[0], loan_id=account[1], channel="chat")
+    for _ in range(3):
+        refused("identity_mismatch", guard.verify_identity, first, pincode="111111")
+    second = calls.start_call("demo-nbfc", "hi")
+    guard.start_contact(second, borrower_id=account[0], loan_id=account[1], channel="chat")
+    refused("identity_locked", guard.verify_identity, second, pincode="560038")   # even if right
+
+
+def test_a_right_answer_clears_earlier_wrong_ones(guard, calls, account, ledger):
+    call = calls.start_call("demo-nbfc", "hi")
+    guard.start_contact(call, borrower_id=account[0], loan_id=account[1], channel="chat")
+    refused("identity_mismatch", guard.verify_identity, call, pincode="111111")
+    guard.verify_identity(call, pincode="560038")
+    assert ledger.identity_failures_since(account[0], "2000") == 0
+
+
+@pytest.mark.parametrize("said", [
+    "If you do not pay we will have you arrested.",
+    "Hum aapke rishtedaron ko bata denge.",
+    "पुलिस आपके घर आएगी",
+])
+def test_threats_are_banned_for_every_lender(guard, said):
+    assert guard.banned_in(said)
+
+
+def test_the_dashboard_can_ask_who_it_is_signed_in_as(guard, calls, ledger, account):
+    c = _api(guard, calls, ledger, f"agent:{AGENT}")
+    assert c.get("/api/me").status_code == 401
+    assert c.get("/api/me", headers={"Authorization": f"Bearer {AGENT}"}).json() == {
+        "login": True, "role": "agent", "mode": "demo"}
+    assert _api(guard, calls, ledger, "").get("/api/me").json()["login"] is False

@@ -38,7 +38,9 @@ from kisht.ports import CallState, ChatModel, ModelUnavailable
 
 IST = ZoneInfo("Asia/Kolkata")
 EVAL_NOW = datetime(2026, 11, 10, 10, 0, tzinfo=IST)
-MAX_TURNS = 8
+# 8 cut off a third of the runs in the full eval (54 of 160) while the borrower was still
+# deciding; real calls are not that short.
+MAX_TURNS = 12
 END = "[END]"
 
 SIMULATOR = """\
@@ -162,6 +164,7 @@ def simulate(persona: Persona, *, lender: Lender, agent_model: ChatModel,
                       # that blocks a harmless sentence cannot be told from one that was right
                       "blocked": t.blocked, "prompt_tokens": t.prompt_tokens,
                       "cached_tokens": t.cached_tokens,
+                      "completion_tokens": t.completion_tokens,
                       "promise_saved": t.promise_saved, "model_calls": t.model_calls,
                       "seconds": round(t.model_latency_s, 2), "fallback": t.fallback})
         if t.fallback:
@@ -303,12 +306,16 @@ class Summary:
     pass_1_interval: tuple[float, float] = (0.0, 0.0)    # 95%, personas resampled
     clean_1: float = 0.0                                  # passed and nothing a person would mind
     failed_quality: dict[str, int] = field(default_factory=dict)
+    # Agent model only, mean per conversation. usd is None when the role has no price.
+    tokens_per_run: dict[str, int] = field(default_factory=dict)
+    usd_per_run: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def summarise(rows: list[dict[str, Any]], k: int) -> Summary:
+def summarise(rows: list[dict[str, Any]], k: int,
+              price: dict[str, float | None] | None = None) -> Summary:
     by_p: dict[str, list[bool]] = {}
     clean_p: dict[str, list[bool]] = {}
     bad_quality: dict[str, int] = {}
@@ -347,13 +354,32 @@ def summarise(rows: list[dict[str, Any]], k: int) -> Summary:
         cats[cat] = {"personas": len(group), "pass_1": ph(group, 1),
                      f"pass_{k}": ph({p: v for p, v in group.items() if len(v) >= k}, k)}
     turn_s.sort()
-    return Summary(runs=len(rows), personas=len(by_p), k=k, pass_1=ph(by_p, 1),
+    n = max(len(rows), 1)
+    total = {key: sum(t.get(key) or 0 for r in rows for t in r["turns"])
+             for key in ("prompt_tokens", "cached_tokens", "completion_tokens")}
+    tokens = {key: round(v / n) for key, v in total.items()}
+    usd = cost_usd(total, price) if price else None
+    return Summary(tokens_per_run=tokens,
+                   usd_per_run=round(usd / n, 5) if usd is not None else None,
+                   runs=len(rows), personas=len(by_p), k=k, pass_1=ph(by_p, 1),
                    pass_k=ph(usable, k), by_category=cats, failed_checks=failed,
                    guard_blocks=blocks, replaced=replaced,
                    median_turn_s=turn_s[len(turn_s) // 2] if turn_s else 0.0,
                    errors=sum(1 for r in rows if r["error"]),
                    pass_1_interval=interval(by_p), clean_1=ph(clean_p, 1),
                    failed_quality=bad_quality)
+
+
+def cost_usd(tokens: dict[str, int], price: dict[str, float | None]) -> float | None:
+    """Dollars for these token counts at a per-million price. Cached input tokens are part
+    of prompt_tokens and are billed at the cached price when one is given."""
+    if price.get("usd_in") is None or price.get("usd_out") is None:
+        return None
+    cached = tokens.get("cached_tokens", 0)
+    cached_price = price["usd_in"] if price.get("usd_cached_in") is None else price["usd_cached_in"]
+    fresh = tokens.get("prompt_tokens", 0) - cached
+    return (fresh * price["usd_in"] + cached * cached_price
+            + tokens.get("completion_tokens", 0) * price["usd_out"]) / 1_000_000
 
 
 def dumps(row: dict[str, Any]) -> str:

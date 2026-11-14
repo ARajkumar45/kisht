@@ -61,7 +61,8 @@ PACK = LanguagePack(
            r"\b(i'll|i will|let me) (note|record|save) (it|that|this|your promise)"),
     possessive=F({"your"}),
     status=F({"overdue", "outstanding", "pending", "late", "missed", "due", "default"}),
-    greeting="Hello, this is {agent} from {lender}. Am I speaking with {first_name}?",
+    greeting=("Hello, this is {agent}, an automated assistant from {lender}. Am I speaking with "
+             "{first_name}?"),
     say={
         "promise_saved": "Thank you, noted: {read_back}.",
         "read_back": "So you will pay {read_back}. Is that right?",

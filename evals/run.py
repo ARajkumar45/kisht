@@ -88,7 +88,9 @@ def main(argv=None) -> int:
 
     rows = [json.loads(line) for line in runs_file.read_text().splitlines()]
     rows = [r for r in rows if any(r["persona"] == x.id for x in personas)]
-    s = summarise(rows, a.k)
+    role = cfg.llm_roles["agent"]
+    s = summarise(rows, a.k, {"usd_in": role.usd_in, "usd_cached_in": role.usd_cached_in,
+                              "usd_out": role.usd_out})
     (out / "summary.json").write_text(json.dumps(s.as_dict(), indent=2))
     lines = [f"# Eval summary ({out.name})", "",
              (f"agent `{rows[0]['agent_model']}`, simulator `{rows[0]['simulator_model']}`; "
@@ -104,7 +106,13 @@ def main(argv=None) -> int:
         lines.append(f"| {cat} | {v['personas']} | {v['pass_1']:.2f} | {v[f'pass_{s.k}']:.2f} |")
     lines += ["", f"Failed checks: {s.failed_checks}",
               f"Failed quality checks: {s.failed_quality}", f"Guard blocks: {s.guard_blocks}",
-              f"Replies replaced by code: {s.replaced}"]
+              f"Replies replaced by code: {s.replaced}", "",
+              ("Agent tokens per conversation: "
+               f"{s.tokens_per_run.get('prompt_tokens', 0):,} in "
+               f"({s.tokens_per_run.get('cached_tokens', 0):,} of them cached), "
+               f"{s.tokens_per_run.get('completion_tokens', 0):,} out."
+               + (f" **Cost per conversation: ${s.usd_per_run:.4f}** at the prices in the config."
+                  if s.usd_per_run is not None else " No price set for this model."))]
     (out / "summary.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     if a.min_pass is not None and s.pass_1 < a.min_pass:

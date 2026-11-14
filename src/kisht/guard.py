@@ -24,7 +24,7 @@ import functools
 import math
 import re
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -35,6 +35,15 @@ from kisht.lender import Lender
 from kisht.ports import CallState
 
 MAX_ID_ATTEMPTS = 3
+# Threats and shaming no lender may switch off (RBI: no intimidation, no contact with family,
+# friends or employer about the debt). A lender's own list adds to these. Matched as plain
+# text in the lower-cased reply; the Tamil and Telugu words are not checked by a native speaker.
+ALWAYS_BANNED = (
+    "police", "jail", "arrest", "giraftar", "seize your", "zabt", "badnaam", "beizzat",
+    "sharam aani", "shame on you", "tell your family", "tell your employer", "your relatives",
+    "rishtedaron ko", "padosiyon ko", "your neighbours", "your neighbors", "ghar aa jayenge",
+    "come to your house", "blacklist",
+    "पुलिस", "जेल", "गिरफ्तार", "बदनाम", "போலீஸ்", "சிறை", "கைது", "పోలీసు", "జైలు", "అరెస్ట్")
 FOLLOWUP_MAX_DAYS = 14
 
 
@@ -165,7 +174,11 @@ class PolicyGuard:
                         pincode: str | None = None) -> dict[str, Any]:
         borrower_id, _ = self._bound(call_id)
         attempts = int(self.calls.get(call_id, "id_attempts", 0))
-        if attempts >= MAX_ID_ATTEMPTS:
+        # Failed checks are counted per borrower over a day, not only per conversation:
+        # hanging up and starting again must not give three fresh guesses.
+        day_ago = (self.now() - timedelta(hours=24)).astimezone(UTC).isoformat()
+        earlier = self.ledger.identity_failures_since(borrower_id, day_ago)
+        if attempts >= MAX_ID_ATTEMPTS or earlier >= MAX_ID_ATTEMPTS:
             raise GuardRefused("identity_locked",
                                "Too many failed checks. Do not share anything; offer to have the "
                                "lender's desk call back, or escalate_to_human with reason "
@@ -180,11 +193,14 @@ class PolicyGuard:
             ok = re.sub(r"\D", "", pincode) == b["pincode"]
         if not ok:
             self.calls.incr(call_id, "id_attempts")
-            left = MAX_ID_ATTEMPTS - attempts - 1
+            self.ledger.add_identity_failure(borrower_id,
+                                             self.now().astimezone(UTC).isoformat())
+            left = MAX_ID_ATTEMPTS - max(attempts, earlier) - 1
             raise GuardRefused("identity_mismatch",
                                f"That does not match. {left} attempt(s) left. Ask again politely; "
                                "never reveal the correct value.")
         self.calls.set_state(call_id, identity_verified=True)
+        self.ledger.clear_identity_failures(borrower_id)
         # The dues come with the answer: asking the model to call get_dues next cost a whole
         # extra model round (about two seconds on a phone call) for a step it always takes.
         return {"verified": True, "name": b["name"], "dues": self.get_dues(call_id),
@@ -383,7 +399,8 @@ class PolicyGuard:
 
     def banned_in(self, text: str) -> list[str]:
         t = (text or "").lower()
-        return [p for p in self.lender.banned_phrases if p in t]
+        return [p for p in dict.fromkeys((*ALWAYS_BANNED, *self.lender.banned_phrases))
+                if p in t]
 
     def check_reply(self, call_id: str, text: str) -> list[str]:
         hits = self.banned_in(text)

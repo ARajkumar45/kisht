@@ -223,6 +223,78 @@ class LimitedModel:
                 pass
 
 
+class FailoverModel:
+    """Two models for one role. The first answers; when it cannot (ModelUnavailable), the
+    second does, in the same turn. After `failures` failures in a row the first is not tried
+    for `cooldown_s` seconds (a circuit breaker), so every caller does not wait out a timeout
+    on a server that is down. One success closes it again.
+
+    While streaming, the switch happens only if nothing was said yet: a reply that began in
+    one voice is not started over by another."""
+
+    def __init__(self, first: ChatModel, second: ChatModel, *, failures: int = 3,
+                 cooldown_s: float = 30.0, clock: Any = time.monotonic):
+        self.first, self.second = first, second
+        self.failures, self.cooldown_s, self._clock = failures, cooldown_s, clock
+        self.name = f"{first.name} (backup {second.name})"
+        self.force_tools = bool(getattr(first, "force_tools", False))
+        self._lock = threading.Lock()
+        self._failed = 0
+        self._open_until = 0.0
+        self.switched = 0                      # replies the backup gave
+
+    def open(self) -> bool:
+        return self._clock() < self._open_until
+
+    def _note(self, ok: bool) -> None:
+        with self._lock:
+            self._failed = 0 if ok else self._failed + 1
+            if self._failed >= self.failures:
+                self._open_until = self._clock() + self.cooldown_s
+                self._failed = 0
+
+    def _run(self, call: Any, said: Any = lambda: False) -> ModelReply:
+        if not self.open():
+            try:
+                reply = call(self.first)
+                self._note(True)
+                return reply
+            except ModelUnavailable:
+                self._note(False)
+                if said():
+                    raise
+        self.switched += 1
+        return call(self.second)
+
+    def complete(self, messages: list[dict[str, Any]],
+                 tools: list[dict[str, Any]] | None = None, **kw: Any) -> ModelReply:
+        return self._run(lambda m: m.complete(messages, tools, **kw))
+
+    def stream(self, messages: list[dict[str, Any]],
+               tools: list[dict[str, Any]] | None = None, *, on_text: Any,
+               **kw: Any) -> ModelReply:
+        heard = []
+
+        def say(piece: str) -> None:
+            heard.append(piece)
+            on_text(piece)
+
+        def call(m: ChatModel) -> ModelReply:
+            stream = getattr(m, "stream", None)
+            return (stream(messages, tools, on_text=say, **kw) if stream
+                    else m.complete(messages, tools, **kw))
+        return self._run(call, said=lambda: bool(heard))
+
+    def reachable(self) -> bool:
+        return any(bool(getattr(m, "reachable", lambda: True)()) for m in (self.first, self.second))
+
+    def warm(self, messages: list[dict[str, Any]],
+             tools: list[dict[str, Any]] | None = None) -> None:
+        warm = getattr(self.second if self.open() else self.first, "warm", None)
+        if warm:
+            warm(messages, tools)
+
+
 def health_check(model: ChatModel) -> dict[str, Any]:
     """Run a tiny real completion. Only this proves the server can actually generate."""
     started = time.perf_counter()

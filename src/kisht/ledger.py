@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE TABLE IF NOT EXISTS escalations (
   id TEXT PRIMARY KEY, loan_id TEXT NOT NULL, reason TEXT NOT NULL, summary TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'open', call_id TEXT, created_utc TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS identity_failures (
+  borrower_id TEXT NOT NULL, at_utc TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS followups (
   id TEXT PRIMARY KEY, loan_id TEXT NOT NULL, on_date TEXT NOT NULL, reason TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'planned', call_id TEXT, created_utc TEXT NOT NULL);
@@ -324,6 +326,18 @@ class SqliteLedger:
     def close_contact(self, contact_id: str, outcome: str, note: str) -> None:
         self.db.execute("UPDATE contacts SET outcome=?, note=? WHERE id=?",
                         (outcome, note, contact_id))
+
+    # ---------- failed identity checks (kept across conversations) ----------
+
+    def add_identity_failure(self, borrower_id: str, at_utc: str) -> None:
+        self.db.execute("INSERT INTO identity_failures VALUES (?,?)", (borrower_id, at_utc))
+
+    def identity_failures_since(self, borrower_id: str, since_utc: str) -> int:
+        return self.db.execute("SELECT COUNT(*) FROM identity_failures WHERE borrower_id=? "
+                               "AND at_utc >= ?", (borrower_id, since_utc)).fetchone()[0]
+
+    def clear_identity_failures(self, borrower_id: str) -> None:
+        self.db.execute("DELETE FROM identity_failures WHERE borrower_id=?", (borrower_id,))
 
     def contacts_since(self, borrower_id: str, since_utc: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.db.execute(

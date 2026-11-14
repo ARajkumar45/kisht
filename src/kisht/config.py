@@ -14,7 +14,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kisht.adapters.llm import LimitedModel, OpenAICompatibleModel, ServerSlots
+from kisht.adapters.llm import FailoverModel, LimitedModel, OpenAICompatibleModel, ServerSlots
 from kisht.ports import ChatModel
 
 Role = Literal["agent", "planner", "simulator", "reviewer"]
@@ -42,6 +42,16 @@ class LLMRole(_Strict):
     # made to call that tool (the API's tool_choice). Off by default: local servers differ in
     # whether they accept it. Switch on for a hosted model that does.
     force_tool_on_retry: bool = False
+    # Price in US dollars per million tokens, for the eval's cost per conversation. Leave out
+    # for a local model. Cached input is billed at `usd_cached_in` where the provider says so.
+    usd_in: float | None = Field(None, ge=0)
+    usd_cached_in: float | None = Field(None, ge=0)
+    usd_out: float | None = Field(None, ge=0)
+    # A second model that answers when this one does not (server down, timeout, queue full).
+    # After `breaker_failures` failures in a row the first is skipped for `breaker_cooldown_s`.
+    backup: LLMRole | None = None
+    breaker_failures: int = Field(3, ge=1)
+    breaker_cooldown_s: float = Field(30.0, gt=0)
 
 
 class LiveCall(_Strict):
@@ -88,9 +98,11 @@ class Config(_Strict):
     @model_validator(mode="after")
     def _roles_point_at_known_servers(self) -> Config:
         for role, spec in self.llm_roles.items():
-            if spec.server not in self.llm_servers:
-                raise ValueError(f"llm_roles.{role}.server {spec.server!r} is not in llm_servers "
-                                 f"({', '.join(self.llm_servers)})")
+            for where, one in ((f"llm_roles.{role}", spec),
+                               (f"llm_roles.{role}.backup", spec.backup)):
+                if one is not None and one.server not in self.llm_servers:
+                    raise ValueError(f"{where}.server {one.server!r} is not in llm_servers "
+                                     f"({', '.join(self.llm_servers)})")
         return self
 
 
@@ -130,6 +142,13 @@ class LLMFactory:
 
     def _build(self, role: Role, live: bool, background: bool) -> ChatModel:
         spec = self.config.llm_roles[role]
+        first = self._build_one(spec, live, background)
+        if spec.backup is None:
+            return first
+        return FailoverModel(first, self._build_one(spec.backup, live, background),
+                             failures=spec.breaker_failures, cooldown_s=spec.breaker_cooldown_s)
+
+    def _build_one(self, spec: LLMRole, live: bool, background: bool) -> ChatModel:
         server = self.config.llm_servers[spec.server]
         limits = self.config.live_call
         api_key = "local"

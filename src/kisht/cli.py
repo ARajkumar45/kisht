@@ -273,17 +273,25 @@ def cmd_compliance(args) -> int:
 def cmd_serve(args) -> int:
     import uvicorn
 
-    from kisht.api import create_api
+    from kisht.api import create_api, load_api_tokens
 
     now = _demo_clock(args)
     rt = build(args.config, audit_name="dashboard", now=now)
-    if rt.cfg.mode != "demo" and args.host not in LOOPBACK:
-        raise SystemExit(f"The dashboard has no login yet, so outside `mode: demo` it only "
-                         f"listens on this machine (127.0.0.1), not on {args.host}.")
+    try:
+        tokens = load_api_tokens()
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
+    if rt.cfg.mode != "demo" and not tokens:
+        raise SystemExit("Outside `mode: demo` the dashboard needs a login: set "
+                         "KISHT_API_TOKENS=\"viewer:<token>,agent:<token>,supervisor:<token>\" "
+                         "(each token at least 16 characters). It carries borrower data.")
+    if tokens and args.host not in LOOPBACK:
+        print("Note: tokens travel in clear text over plain HTTP. Put a TLS proxy in front "
+              "before anyone signs in from another machine.")
     _sweeper(rt)
     print(f"Kisht dashboard: http://{args.host}:{args.port}"
           + (f"  (clock fixed at {args.at})" if args.at else ""))
-    uvicorn.run(create_api(rt), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_api(rt, tokens), host=args.host, port=args.port, log_level="warning")
     return 0
 
 

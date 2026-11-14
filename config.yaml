@@ -15,6 +15,10 @@ llm_servers:
   #   api_key_env: DEEPINFRA_API_KEY      # the key lives in .env, never here
   #   max_concurrency: 8
 
+# A role may add:
+#   backup: {server: cloud, model: <name>}   answers when the first model cannot
+#   usd_in / usd_cached_in / usd_out         price per million tokens, for cost per conversation
+#   force_tool_on_retry: true                for a hosted model that accepts tool_choice
 llm_roles:
   agent:     {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.3, max_tokens: 400}
   planner:   {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.2, max_tokens: 900}

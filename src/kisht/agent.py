@@ -237,6 +237,7 @@ class TurnResult:
     queue_wait_s: float = 0.0
     prompt_tokens: int = 0
     cached_tokens: int = 0
+    completion_tokens: int = 0
     fallback: bool = False
     coach: str | None = None                              # supervisor's note used this turn
     first_say_s: float | None = None                      # voice: seconds until the first words
@@ -853,6 +854,7 @@ class Agent:
         result.model_calls += 1
         result.prompt_tokens += reply.prompt_tokens
         result.cached_tokens += reply.cached_tokens
+        result.completion_tokens += reply.completion_tokens
         result.queue_wait_s += getattr(reply, "queue_wait_s", 0.0)
         return reply
 

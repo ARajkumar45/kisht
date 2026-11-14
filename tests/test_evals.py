@@ -131,3 +131,13 @@ def test_smoke_and_held_out_sets_load_and_do_not_overlap():
     held = load_personas("evals/personas_heldout.yaml")
     assert set(SMOKE) <= main_ids and len(SMOKE) == 8
     assert len(held) == 20 and not main_ids & {p.id for p in held}
+
+
+def test_cost_per_conversation_uses_the_cached_price_for_cached_tokens():
+    from kisht.evals import cost_usd
+    tokens = {"prompt_tokens": 1_000_000, "cached_tokens": 600_000, "completion_tokens": 100_000}
+    price = {"usd_in": 1.0, "usd_cached_in": 0.1, "usd_out": 4.0}
+    assert cost_usd(tokens, price) == pytest.approx(0.4 + 0.06 + 0.4)
+    assert cost_usd(tokens, {"usd_in": 1.0, "usd_cached_in": None, "usd_out": 4.0}) == \
+        pytest.approx(1.0 + 0.4)
+    assert cost_usd(tokens, {"usd_in": None, "usd_cached_in": None, "usd_out": None}) is None

@@ -22,7 +22,9 @@ system and a human desk action is as audited as an agent action.
 """
 from __future__ import annotations
 
+import contextlib
 import csv
+import hmac
 import io
 import json
 import os
@@ -36,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -99,8 +101,76 @@ def _json_from(text: str) -> dict | None:
         return None
 
 
-def create_api(rt: Runtime) -> FastAPI:
-    app = FastAPI(title="Kisht contact centre")
+SHUTDOWN_WAIT_S = 20.0
+ROLES = ("viewer", "agent", "supervisor")       # each role can do what the ones before it can
+SUPERVISOR_ONLY = re.compile(r"^/api/(export/|calls/[^/]+/(coach|takeover|qa)$)")
+_FORMULA = ("=", "+", "-", "@", "\t", "\r")
+
+
+def load_api_tokens(env: str | None = None) -> dict[str, str]:
+    """KISHT_API_TOKENS="viewer:<token>,agent:<token>,supervisor:<token>" -> {token: role}.
+    A token shorter than 16 characters or an unknown role stops the start: a weak login
+    that looks like a login is worse than none."""
+    raw = os.environ.get("KISHT_API_TOKENS", "") if env is None else env
+    out: dict[str, str] = {}
+    for part in filter(None, (x.strip() for x in raw.split(","))):
+        role, _, token = part.partition(":")
+        if role not in ROLES or len(token) < 16:
+            raise ValueError("KISHT_API_TOKENS: each entry is role:token, role one of "
+                             f"{', '.join(ROLES)}, token at least 16 characters")
+        out[token] = role
+    return out
+
+
+def needed_role(method: str, path: str) -> str:
+    """Reading is for viewers. Working a case or a chat is for agents. Steering a live call,
+    grading one, or taking borrower data out as a file is for supervisors."""
+    if SUPERVISOR_ONLY.match(path):
+        return "supervisor"
+    return "viewer" if method in ("GET", "HEAD", "OPTIONS") else "agent"
+
+
+def csv_safe(value: Any) -> Any:
+    """A cell that starts with = + - @ runs as a formula when the file is opened in a
+    spreadsheet (a borrower's name or a note can carry one). A leading ' makes it text."""
+    return "'" + value if isinstance(value, str) and value.startswith(_FORMULA) else value
+
+
+def create_api(rt: Runtime, tokens: dict[str, str] | None = None) -> FastAPI:
+    """`tokens` is {token: role}. None or empty means no login, which `kisht serve` only
+    allows with `mode: demo`."""
+    reviews: list[threading.Thread] = []
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        """On a normal stop (SIGTERM, Ctrl-C) reviews already running get up to
+        SHUTDOWN_WAIT_S to finish, so a deploy does not drop them half-written."""
+        yield
+        deadline = time.monotonic() + SHUTDOWN_WAIT_S
+        for t in reviews:
+            t.join(max(0.0, deadline - time.monotonic()))
+
+    app = FastAPI(title="Kisht contact centre", lifespan=lifespan)
+    tokens = tokens or {}
+
+    @app.middleware("http")
+    async def login(request: Request, call_next: Any) -> Any:
+        path = request.url.path
+        if not tokens or not path.startswith("/api/") or path == "/api/health":
+            return await call_next(request)
+        given = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        role = next((r for t, r in tokens.items() if hmac.compare_digest(t, given)), None)
+        if role is None:
+            return JSONResponse({"detail": "Sign in: a valid access token is needed."}, 401,
+                                headers={"WWW-Authenticate": "Bearer"})
+        need = needed_role(request.method, path)
+        if ROLES.index(role) < ROLES.index(need):
+            rt.audit.record(tenant_id="-", call_id=None, action="api_denied",
+                            args={"role": role, "needs": need, "path": path}, outcome="denied")
+            return JSONResponse({"detail": f"This needs the {need} role; you are signed in "
+                                           f"as {role}."}, 403)
+        request.state.role = role
+        return await call_next(request)
     turn_locks: dict[str, threading.Lock] = {}
     lock = threading.Lock()
 
@@ -115,9 +185,19 @@ def create_api(rt: Runtime) -> FastAPI:
     def review_later(call_id: str, lender) -> None:
         def run():
             Reviewer(rt.models.for_role("reviewer"), rt.insights).review(call_id, lender)
-        threading.Thread(target=run, daemon=True).start()
+        t = threading.Thread(target=run, daemon=True)
+        with lock:
+            reviews[:] = [r for r in reviews if r.is_alive()] + [t]
+        t.start()
+
 
     # ---------- overview ----------
+
+    @app.get("/api/me")
+    def me(request: Request) -> dict[str, Any]:
+        """Who the dashboard is signed in as. Without tokens (demo) everyone is a supervisor."""
+        return {"login": bool(tokens), "role": getattr(request.state, "role", ROLES[-1]),
+                "mode": rt.cfg.mode}
 
     @app.get("/api/overview")
     def overview() -> dict[str, Any]:
@@ -284,8 +364,10 @@ def create_api(rt: Runtime) -> FastAPI:
         buf = io.StringIO()
         out = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
         out.writeheader()
-        out.writerows(rt.insights.calls(status=status, outcome=outcome, language=language,
-                                        flagged=flagged, q=q, limit=10_000))
+        out.writerows({k: csv_safe(v) for k, v in row.items()}
+                      for row in rt.insights.calls(status=status, outcome=outcome,
+                                                   language=language, flagged=flagged, q=q,
+                                                   limit=10_000))
         return Response(buf.getvalue(), media_type="text/csv", headers={
             "Content-Disposition": 'attachment; filename="kisht-calls.csv"'})
 

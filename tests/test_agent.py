@@ -43,7 +43,8 @@ def start(guard, calls, account, model, channel="chat"):
 
 def test_greeting_names_the_borrower_and_reveals_nothing(guard, calls, account):
     _, greeting = start(guard, calls, account, FakeModel())
-    assert greeting.startswith("Namaste, main Asha bol rahi hoon Demo Finance se")
+    assert greeting.startswith("Namaste, main Asha bol rahi hoon, Demo Finance ki automated "
+                               "assistant")     # says what it is before anything else
     assert "Priya ji" in greeting and "3000" not in greeting and "EMI" not in greeting
 
 

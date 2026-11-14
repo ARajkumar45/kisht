@@ -70,8 +70,8 @@ PACK = LanguagePack(
            r"\brecord kar (rahi|raha|deti|deta|dungi|dunga) (hoon|hun|hu)\b"),
     possessive=F({"aapka", "aapki", "aapke", "aapko", "tumhara", "tumhari"}),
     status=F({"bakaya", "baaki", "peeche"}),
-    greeting="Namaste, main {agent} bol rahi hoon {lender} se. Kya meri baat {first_name} ji se "
-             "ho rahi hai?",
+    greeting=("Namaste, main {agent} bol rahi hoon, {lender} ki automated assistant. Kya meri baat "
+             "{first_name} ji se ho rahi hai?"),
     say={
         "promise_saved": "Dhanyavaad, note kar liya: {read_back}.",
         "read_back": "Confirm kar doon: {read_back}. Sahi hai?",

@@ -211,8 +211,12 @@ A conversation is wrapped up the same way whoever ended it: a case note for next
 ledger contact closed, and the review. A phone call that simply goes quiet is picked up by a
 sweeper after a few minutes.
 
-The dashboard has no login. It is built for a local demo; put it behind authentication before
-exposing it to a network.
+The dashboard has a login with three roles. Set
+`KISHT_API_TOKENS="viewer:<token>,agent:<token>,supervisor:<token>"` (each token at least 16
+characters) and every `/api` request needs one: a viewer reads, an agent also works desk cases
+and chats, a supervisor also steers live calls, grades them and exports the call log. Outside
+`mode: demo` the dashboard does not start without tokens. Tokens are sent over plain HTTP, so
+put a TLS proxy in front before anyone signs in from another machine.
 The voice bridge accepts any caller on this machine by default. Before it is reachable from
 outside (a tunnel for a phone provider, Docker), set `KISHT_BRIDGE_TOKEN` for both `kisht
 bridge` and `tools/run_bolna.sh`: the bridge then requires it as a bearer token. Docker
