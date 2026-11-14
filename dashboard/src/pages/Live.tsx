@@ -38,11 +38,11 @@ function Controls({ call, onDone }: { call: Call; onDone: () => void }) {
   return (
     <div className="controls">
       <div className="form-row">
-        <input placeholder="Private note to the AI, e.g. offer a part payment" value={note} onChange={(e) => setNote(e.target.value)} />
+        <input aria-label="Private note to the AI" placeholder="Private note to the AI, e.g. offer a part payment" value={note} onChange={(e) => setNote(e.target.value)} />
         <button className="secondary" disabled={busy || !note.trim()} onClick={() => run(() => api.coach(call.call_id, note, by), "Note queued for the AI's next reply.")}>Coach</button>
         <button className="danger" disabled={busy} onClick={() => { if (window.confirm("Stop the AI and hand this conversation to the human desk?")) run(() => api.takeOver(call.call_id, note, by), "Taken over. The case is on the human desk."); }}>Take over</button>
       </div>
-      {msg && <div className="muted small">{msg}</div>}
+      {msg && <div className="muted small" role="status">{msg}</div>}
     </div>
   );
 }
@@ -58,7 +58,7 @@ export default function Live() {
           {data.live.map((c) => (
             <div className="live-call" key={c.call_id}>
               <div className="live-head">
-                <span className="pulse" /> <b>{c.borrower_name}</b>
+                <span className="pulse" role="img" aria-label="Live" /> <b>{c.borrower_name}</b>
                 <span className="muted small">{LANG[c.language ?? ""]} · {human(c.channel)} · {c.turns} turns</span>
                 <CallLink id={c.call_id}>open</CallLink>
                 {c.blocks > 0 && <Badge tone="bad">{c.blocks} blocked</Badge>}

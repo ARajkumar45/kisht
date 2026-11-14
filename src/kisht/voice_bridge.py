@@ -34,7 +34,7 @@ from starlette.concurrency import run_in_threadpool
 
 from kisht.adapters.call_state import RedisCallState
 from kisht.adapters.llm import health_check
-from kisht.agent import Agent, TurnResult, prepare
+from kisht.agent import Agent, CallerGone, TurnResult, prepare
 from kisht.guard import GuardRefused, PolicyGuard
 from kisht.insights import InsightsStore
 from kisht.knowledge import Agreement
@@ -51,8 +51,9 @@ MAX_TEXT = 2000                     # characters of one utterance; more is not s
 TOKEN_ENV = "KISHT_BRIDGE_TOKEN"    # if set, every request must carry it as a bearer token
 
 
-class _CallerGone(Exception):
-    """The voice layer dropped this turn (the caller spoke over us): stop working on it."""
+# The voice layer dropped this turn (the caller spoke over us): stop working on it. The same
+# exception the agent raises when it asks, before running a tool, whether anyone still listens.
+_CallerGone = CallerGone
 CHUNK_CHARS = 40
 DEFAULT_RUN = "unpatched-default"
 
@@ -153,6 +154,11 @@ class VoiceBridge:
         return result, agent.call_id
 
     def discard_reply(self, call_id: str) -> bool:
+        """The caller cut in or hung up before the reply was heard. A promise waiting for
+        their yes goes too: its read-back may have been in the part they never heard, and a
+        later "haan" must not save a promise nobody read out to them. The agent reads it back
+        again when the borrower returns to it."""
+        self.calls.clear(call_id, "pending_promise")
         return self.calls.pop_last(call_id, "assistant") is not None
 
 
@@ -186,10 +192,12 @@ def _chunk(rid: str, model: str, delta: dict, finish: str | None = None) -> str:
         ensure_ascii=False) + "\n\n"
 
 
-def create_app(bridge: VoiceBridge) -> FastAPI:
+def create_app(bridge: VoiceBridge, *, require_token: bool = False) -> FastAPI:
     app = FastAPI(title="kisht voice bridge")
 
     token = os.environ.get(TOKEN_ENV, "")
+    if require_token and not token:      # production: never serve borrowers to an open port
+        raise RuntimeError(f"{TOKEN_ENV} is not set; the bridge will not start without it")
 
     def authorise(request: Request) -> None:
         """With KISHT_BRIDGE_TOKEN set (do this before opening a tunnel), every request must
@@ -297,6 +305,8 @@ def create_app(bridge: VoiceBridge) -> FastAPI:
             if state["gone"]:
                 raise _CallerGone       # stops the model call in flight; nobody is listening
             loop.call_soon_threadsafe(queue.put_nowait, piece)
+
+        hand_over.alive = lambda: not state["gone"]     # asked before any tool runs
 
         def work() -> None:
             try:

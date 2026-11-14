@@ -40,7 +40,7 @@ export default function Quality() {
             </div>
             {cal.disagreements.length > 0 && (
               <table>
-                <thead><tr><th>Call</th><th>Scorecard item</th><th>AI said</th><th>Human said</th><th>Reviewer</th></tr></thead>
+                <thead><tr><th scope="col">Call</th><th scope="col">Scorecard item</th><th scope="col">AI said</th><th scope="col">Human said</th><th scope="col">Reviewer</th></tr></thead>
                 <tbody>
                   {cal.disagreements.map((d, i) => (
                     <tr key={i}>
@@ -60,7 +60,7 @@ export default function Quality() {
         note="Every conversation in the call log, counted the same way. Old calls can show claims that reached the borrower: the checks were narrower then." />
       <Card title="Eval runs">
         <table>
-          <thead><tr><th>Run</th><th>Personas</th><th>Runs</th><th>pass^1</th><th>pass^k</th><th>Median turn</th><th>By category (pass^1)</th></tr></thead>
+          <thead><tr><th scope="col">Run</th><th scope="col">Personas</th><th scope="col">Runs</th><th scope="col">pass^1</th><th scope="col">pass^k</th><th scope="col">Median turn</th><th scope="col">By category (pass^1)</th></tr></thead>
           <tbody>
             {data.evals.map((e) => (
               <tr key={e.run}>
@@ -73,7 +73,7 @@ export default function Quality() {
                 <td className="wrap">
                   <div className="mini-bars">
                     {Object.entries(e.by_category ?? {}).map(([k, v]) => (
-                      <div key={k} title={`${k}: ${Math.round(v.pass_1 * 100)}%`} className="mini">
+                      <div key={k} role="img" aria-label={`${k}: ${Math.round(v.pass_1 * 100)}%`} title={`${k}: ${Math.round(v.pass_1 * 100)}%`} className="mini">
                         <div className="mini-fill" style={{ height: `${v.pass_1 * 100}%` }} />
                         <span>{k.replace("_", " ")}</span>
                       </div>
@@ -97,7 +97,7 @@ function ClaimsCard({ title, rows, kinds, note }: { title: string; rows: Record<
   return (
     <Card title={title} right={<span className="muted small">{all.per_100_turns ?? "–"} per 100 agent turns</span>}>
       <table>
-        <thead><tr><th>Language</th><th>Conversations</th><th>Agent turns</th><th>Claims with nothing behind them</th><th>Fixed by asking again</th><th>Replaced by code</th><th>Reached the borrower</th></tr></thead>
+        <thead><tr><th scope="col">Language</th><th scope="col">Conversations</th><th scope="col">Agent turns</th><th scope="col">Claims with nothing behind them</th><th scope="col">Fixed by asking again</th><th scope="col">Replaced by code</th><th scope="col">Reached the borrower</th></tr></thead>
         <tbody>
           {[...langs, "all"].map((k) => (
             <tr key={k}>
@@ -109,7 +109,7 @@ function ClaimsCard({ title, rows, kinds, note }: { title: string; rows: Record<
           ))}
         </tbody>
       </table>
-      <div className="chips" style={{ marginTop: 10 }}>
+      <div className="chips mt">
         {Object.entries(all.by_kind).map(([k, n]) => <Badge key={k}>{kinds[k] ?? k}: {n}</Badge>)}
       </div>
       {p && (
@@ -118,7 +118,7 @@ function ClaimsCard({ title, rows, kinds, note }: { title: string; rows: Record<
         </p>
       )}
       {all.examples.length > 0 && (
-        <ul className="plain small" style={{ marginTop: 8 }}>
+        <ul className="plain small mt">
           {all.examples.slice(0, 4).map((e, i) => <li key={i} className="muted">Reached the borrower ({kinds[e.kind] ?? e.kind}): "{e.said.slice(0, 140)}…"</li>)}
         </ul>
       )}

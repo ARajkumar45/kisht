@@ -47,6 +47,19 @@ def _calendar_words(packs: list[LanguagePack]) -> set[str]:
     return out
 
 
+_DAY_NUMBER = re.compile(
+    rf"\b[{_DIGITS}]{{1,2}}(st|nd|rd|th)\b|\b[{_DIGITS}]{{1,2}} ?(tarikh|taarikh|tareekh)\b",
+    re.IGNORECASE)
+
+
+def names_a_day(text: str) -> bool:
+    """The borrower's words name a day: tomorrow, Friday, 14 November, the 15th."""
+    packs = list(PACKS.values())
+    words = set(_words(text))
+    named = _calendar_words(packs) | _union(packs, "tomorrow") | _union(packs, "day_after")
+    return bool(words & named) or bool(_DAY_NUMBER.search(text))
+
+
 def is_clear_yes(text: str, lang: str | None = None) -> bool:
     t = text.lower().strip()
     if not t or t.endswith("?"):
@@ -140,6 +153,44 @@ def claims_payment_received(reply: str) -> bool:
 def claims_link_sent(reply: str) -> bool:
     """Says a payment link was or is being sent. Only send_payment_link can make that true."""
     return _any(_LINK_SENT, reply)
+
+
+_STOP_CONTACT = _compile("stop_contact")
+_HANDED_OVER = _compile("handed_over")
+
+
+def claims_handed_over(reply: str) -> bool:
+    """Says the case went to a human. Only escalate_to_human can make that true. An offer
+    ("shall I ask our team to call you?") is not a claim."""
+    return any(_any(_HANDED_OVER, s) for s in re.split(r"(?<=[.!?।])\s+", reply)
+               if not s.rstrip().endswith("?"))
+
+
+_TERMS_CUE = _compile("terms_cue")
+_HARDSHIP_CUE = _compile("hardship_cue")
+
+
+def asks_about_terms(text: str) -> bool:
+    """The borrower asks something the loan agreement answers (fees, credit score ...)."""
+    return _any(_TERMS_CUE, text)
+
+
+def mentions_hardship(text: str) -> bool:
+    """The borrower speaks of a job loss, illness or a death."""
+    return _any(_HARDSHIP_CUE, text)
+
+
+_STOP_REQUEST = _compile("stop_request")
+
+
+def asks_to_stop(text: str) -> bool:
+    """The borrower plainly asks never to be contacted again."""
+    return _any(_STOP_REQUEST, text)
+
+
+def claims_stop_contact(reply: str) -> bool:
+    """Says we will not contact them again. Only opt_out can make that true."""
+    return _any(_STOP_CONTACT, reply)
 
 
 def is_stall(reply: str) -> bool:

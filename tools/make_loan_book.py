@@ -20,7 +20,11 @@ def main() -> int:
     p.add_argument("--db", default=None, help="default: stores.ledger_db from the config")
     p.add_argument("--config", default="config.yaml")
     a = p.parse_args()
-    db = Path(a.db or load_config(a.config).stores.ledger_db)
+    cfg = load_config(a.config)
+    if cfg.mode != "demo":
+        raise SystemExit(f"{a.config} is not `mode: demo`: refusing to build (and overwrite a "
+                         "ledger with) made-up borrowers.")
+    db = Path(a.db or cfg.stores.ledger_db)
     if db.exists():
         db.unlink()                                  # always rebuilt from the seed
     counts = generate(SqliteLedger(db), lender_id=a.lender, today=a.today, n=a.n, seed=a.seed,

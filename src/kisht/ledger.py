@@ -289,6 +289,30 @@ class SqliteLedger:
                          call_id))
         return cid
 
+    def log_contact_checked(self, check, *, since_utc: str, lender_id: str, borrower_id: str,
+                            channel: str, loan_id: str | None = None,
+                            call_id: str | None = None, started_utc: str | None = None) -> str:
+        """Count and log in one transaction. `check` gets this borrower's contacts since
+        `since_utc` and raises to refuse. Two workers starting a contact with the same borrower
+        at the same moment cannot both pass a cap that has one attempt left."""
+        def write(db):
+            check([dict(r) for r in db.execute(
+                "SELECT * FROM contacts WHERE borrower_id=? AND started_utc >= ? "
+                "ORDER BY started_utc", (borrower_id, since_utc))])
+            cid = _id("ct")
+            db.execute("INSERT INTO contacts VALUES (?,?,?,?,?,?,NULL,NULL,?)",
+                       (cid, lender_id, borrower_id, loan_id, channel, started_utc or _now(),
+                        call_id))
+            return cid
+        return self._write(write)
+
+    def resolve_escalation(self, escalation_id: str) -> None:
+        """The human desk closed the case: agent contact with this borrower may resume."""
+        self.db.execute("UPDATE escalations SET status='resolved' WHERE id=?", (escalation_id,))
+
+    def reopen_escalation(self, escalation_id: str) -> None:
+        self.db.execute("UPDATE escalations SET status='open' WHERE id=?", (escalation_id,))
+
     def add_desk_note(self, *, lender_id: str, borrower_id: str, loan_id: str, note: str) -> str:
         """What the human desk agreed with the borrower. Stored with the case notes, so the
         agent reads it (after identity) the next time it talks to this borrower."""

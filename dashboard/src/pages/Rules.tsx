@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Rule } from "../api";
-import { Badge, Card, Loading, Page, Tile, useLoad } from "../ui";
+import { Badge, Card, Loading, Page, Tile, press, useLoad } from "../ui";
 
 const STATUS: Record<Rule["status"], [string, string]> = {
   enforced: ["Enforced", "good"],
@@ -14,7 +14,7 @@ function Row({ r }: { r: Rule }) {
   const [label, tone] = STATUS[r.status];
   return (
     <>
-      <tr onClick={() => setOpen(!open)} className={r.status === "not_applicable" ? "dim" : ""}>
+      <tr {...press(() => setOpen(!open))} aria-expanded={open} className={r.status === "not_applicable" ? "dim" : ""}>
         <td className="nowrap"><b>{r.para}</b><div className="muted small">{r.source}</div></td>
         <td className="wrap-wide">{r.requires}</td>
         <td><Badge tone={tone}>{label}</Badge></td>
@@ -49,7 +49,7 @@ export default function Rules() {
   const days = Math.ceil((new Date(main.effective).getTime() - Date.now()) / 86400000);
   const table = (rows: Rule[]) => (
     <table className="clickable rules">
-      <thead><tr><th>Paragraph</th><th>What it requires</th><th>Status</th><th>How Kisht enforces it</th><th>Stopped so far</th></tr></thead>
+      <thead><tr><th scope="col">Paragraph</th><th scope="col">What it requires</th><th scope="col">Status</th><th scope="col">How Kisht enforces it</th><th scope="col">Stopped so far</th></tr></thead>
       <tbody>{rows.map((r) => <Row key={r.id} r={r} />)}</tbody>
     </table>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Borrower } from "../api";
-import { Card, LANG, Page, human, rupees, useLoad } from "../ui";
+import { Card, LANG, Page, human, press, rupees, useLoad } from "../ui";
 
 type Msg = { from: "agent" | "me"; text: string; meta?: string[]; bad?: string[] };
 
@@ -50,10 +50,10 @@ export default function Chat() {
     <Page title="Test chat" sub="Be the borrower. The real agent, guard and ledger answer; the conversation appears in the call log with its trace and review.">
       <div className="grid-chat">
         <Card title="Pick a synthetic borrower">
-          <input placeholder="Search name or city…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input aria-label="Search borrowers" placeholder="Search name or city…" value={q} onChange={(e) => setQ(e.target.value)} />
           <ul className="people">
             {(people ?? []).map((b) => (
-              <li key={b.id} className={who?.id === b.id ? "sel" : ""} onClick={() => start(b)}>
+              <li key={b.id} className={who?.id === b.id ? "sel" : ""} aria-current={who?.id === b.id || undefined} {...press(() => start(b))}>
                 <b>{b.name}</b> <span className="muted small">{b.city} · {LANG[b.language]} · {human(b.product)} · EMI {rupees(b.emi)}</span>
               </li>
             ))}
@@ -61,7 +61,7 @@ export default function Chat() {
         </Card>
         <div className="phone">
           <div className="phone-head">
-            <div className="avatar">A</div>
+            <div className="avatar" aria-hidden="true">A</div>
             <div><b>Asha · Demo Finance</b><div className="small">{who ? `chatting as ${who.name}` : "pick a borrower"}</div></div>
           </div>
           <div className="phone-body">
@@ -77,14 +77,14 @@ export default function Chat() {
               </div>
             ))}
             {busy && <div className="bubble agent typing">typing…</div>}
-            {err && <div className="error">{err}</div>}
+            {err && <div className="error" role="alert">{err}</div>}
             {ended && callId && (
               <div className="ended">Conversation ended: {human(ended.split(":")[0])}. <Link to={`/calls/${callId}`}>See the trace and review</Link></div>
             )}
             <div ref={end} />
           </div>
           <form className="phone-input" onSubmit={(e) => { e.preventDefault(); send(); }}>
-            <input disabled={!callId || !!ended || busy} placeholder={callId ? "Type as the borrower… (e.g. Haan, main hoon)" : ""} value={text} onChange={(e) => setText(e.target.value)} />
+            <input aria-label="Message as the borrower" disabled={!callId || !!ended || busy} placeholder={callId ? "Type as the borrower… (e.g. Haan, main hoon)" : ""} value={text} onChange={(e) => setText(e.target.value)} />
             <button disabled={!callId || !!ended || busy || !text.trim()}>Send</button>
             <button type="button" className="secondary" disabled={!callId || !!ended} onClick={finish}>End</button>
           </form>

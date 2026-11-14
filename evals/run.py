@@ -3,6 +3,8 @@
     uv run python evals/run.py --k 4                         # all personas, 4 runs each
     uv run python evals/run.py --k 1 --only promise,hardship # some categories or persona ids
     uv run python evals/run.py --k 4 --out results/evals/local-qwen9b --workers 2
+    uv run python evals/run.py --smoke --k 2                 # 8 personas, the fast gate
+    uv run python evals/run.py --personas evals/personas_heldout.yaml   # never used for tuning
 
 Models come from config.yaml roles `agent` and `simulator`; switch them there.
 """
@@ -19,7 +21,7 @@ import fakeredis
 
 from kisht.adapters.call_state import RedisCallState
 from kisht.config import LLMFactory, load_config
-from kisht.evals import dumps, grade, load_personas, simulate, summarise
+from kisht.evals import SMOKE, dumps, grade, load_personas, quality, simulate, summarise
 from kisht.knowledge import Agreement
 from kisht.lender import LenderRegistry
 
@@ -32,6 +34,10 @@ def main(argv=None) -> int:
     p.add_argument("--workers", type=int, default=1)
     p.add_argument("--config", default="config.yaml")
     p.add_argument("--personas", default="evals/personas.yaml")
+    p.add_argument("--smoke", action="store_true",
+                   help="only the 8 smoke personas (one per kind of conversation)")
+    p.add_argument("--min-pass", type=float, default=None,
+                   help="exit 1 if pass^1 is below this (for a CI gate), e.g. 0.6")
     a = p.parse_args(argv)
 
     cfg = load_config(a.config)
@@ -40,6 +46,8 @@ def main(argv=None) -> int:
     factory = LLMFactory(cfg)
     agent_model, sim_model = factory.for_role("agent"), factory.for_role("simulator")
     personas = load_personas(a.personas)
+    if a.smoke:
+        personas = [x for x in personas if x.id in SMOKE]
     if a.only:
         want = set(a.only.split(","))
         personas = [x for x in personas if x.id in want or x.category in want]
@@ -62,13 +70,16 @@ def main(argv=None) -> int:
         run = simulate(persona, lender=lender, agent_model=agent_model,
                        simulator_model=sim_model, calls=calls, agreement=agreement)
         checks = grade(run, persona.expect, lender)
+        q = quality(run, lender)
         row = {**run, "trial": trial, "checks": checks, "passed": all(checks.values()),
+               "quality": q, "clean": all(checks.values()) and all(q.values()),
                "agent_model": agent_model.name, "simulator_model": sim_model.name}
         with lock:
             with open(runs_file, "a", encoding="utf-8") as f:
                 f.write(dumps(row) + "\n")
-            failed = [c for c, ok in checks.items() if not ok]
-            print(f"{'PASS' if row['passed'] else 'FAIL'} {persona.id:26} #{trial} "
+            failed = [c for c, ok in {**checks, **q}.items() if not ok]
+            verdict = "CLEAN" if row["clean"] else "PASS " if row["passed"] else "FAIL "
+            print(f"{verdict} {persona.id:26} #{trial} "
                   f"{len(run['turns'])} turns {run['seconds']:>6.1f}s outcome={run['outcome']}"
                   + (f"  failed: {', '.join(failed)}" if failed else ""), flush=True)
 
@@ -84,13 +95,21 @@ def main(argv=None) -> int:
               f"{s.personas} personas, {s.runs} runs, k={s.k}"), "",
              (f"**pass^1 = {s.pass_1:.2f}**, **pass^{s.k} = {s.pass_k:.2f}**, "
               f"median turn {s.median_turn_s:.1f} s, errors {s.errors}"), "",
+             (f"pass^1 95% interval {s.pass_1_interval[0]:.2f} to {s.pass_1_interval[1]:.2f} "
+              f"(whole personas resampled). **Clean = {s.clean_1:.2f}**: passed, and at most "
+              "one reply replaced by code, no reply in the wrong language, no repeated reply, "
+              "not cut off by the turn limit."), "",
              f"| Category | Personas | pass^1 | pass^{s.k} |", "|---|---|---|---|"]
     for cat, v in s.by_category.items():
         lines.append(f"| {cat} | {v['personas']} | {v['pass_1']:.2f} | {v[f'pass_{s.k}']:.2f} |")
-    lines += ["", f"Failed checks: {s.failed_checks}", f"Guard blocks: {s.guard_blocks}",
+    lines += ["", f"Failed checks: {s.failed_checks}",
+              f"Failed quality checks: {s.failed_quality}", f"Guard blocks: {s.guard_blocks}",
               f"Replies replaced by code: {s.replaced}"]
     (out / "summary.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
+    if a.min_pass is not None and s.pass_1 < a.min_pass:
+        print(f"pass^1 {s.pass_1:.2f} is below --min-pass {a.min_pass:.2f}", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -1,0 +1,102 @@
+{
+  "runs": 160,
+  "personas": 40,
+  "k": 4,
+  "pass_1": 0.581,
+  "pass_k": 0.325,
+  "by_category": {
+    "adversarial": {
+      "personas": 5,
+      "pass_1": 0.85,
+      "pass_4": 0.8
+    },
+    "dispute": {
+      "personas": 2,
+      "pass_1": 0.625,
+      "pass_4": 0.5
+    },
+    "hardship": {
+      "personas": 4,
+      "pass_1": 0.438,
+      "pass_4": 0.25
+    },
+    "identity": {
+      "personas": 3,
+      "pass_1": 0.667,
+      "pass_4": 0.667
+    },
+    "negotiate": {
+      "personas": 6,
+      "pass_1": 0.417,
+      "pass_4": 0.0
+    },
+    "opt_out": {
+      "personas": 2,
+      "pass_1": 0.75,
+      "pass_4": 0.5
+    },
+    "pay_now": {
+      "personas": 3,
+      "pass_1": 0.833,
+      "pass_4": 0.333
+    },
+    "promise": {
+      "personas": 8,
+      "pass_1": 0.656,
+      "pass_4": 0.25
+    },
+    "terms": {
+      "personas": 4,
+      "pass_1": 0.375,
+      "pass_4": 0.25
+    },
+    "waiver": {
+      "personas": 3,
+      "pass_1": 0.25,
+      "pass_4": 0.0
+    }
+  },
+  "failed_checks": {
+    "no_promise": 3,
+    "link": 1,
+    "promise": 37,
+    "followup": 2,
+    "escalate": 25,
+    "opt_out": 2,
+    "cites": 4
+  },
+  "guard_blocks": {
+    "false_claim_blocked": 155,
+    "leak_blocked": 29,
+    "bad_followup_date": 1,
+    "date_out_of_policy": 9,
+    "amount_out_of_policy": 2,
+    "identity_not_verified": 2,
+    "identity_mismatch": 19,
+    "identity_locked": 2,
+    "bad_reason": 2,
+    "banned_phrase": 10
+  },
+  "replaced": {
+    "unbacked_link_claim": 48,
+    "false_claim": 22,
+    "false_promise_claim": 80,
+    "guessed_identity": 17,
+    "unbacked_handoff_claim": 5,
+    "leak_before_identity": 12,
+    "banned_phrase": 10
+  },
+  "median_turn_s": 20.9,
+  "errors": 0,
+  "pass_1_interval": [
+    0.469,
+    0.694
+  ],
+  "clean_1": 0.319,
+  "failed_quality": {
+    "right_language": 6,
+    "not_cut_off": 54,
+    "no_repeated_reply": 21,
+    "few_safe_lines": 52
+  }
+}

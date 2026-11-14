@@ -38,6 +38,10 @@ class LLMRole(_Strict):
     temperature: float = Field(0.3, ge=0, le=2)
     max_tokens: int = Field(400, ge=1)
     disable_thinking: bool = True
+    # When the model says "I sent the link" without calling the tool, the second try can be
+    # made to call that tool (the API's tool_choice). Off by default: local servers differ in
+    # whether they accept it. Switch on for a hosted model that does.
+    force_tool_on_retry: bool = False
 
 
 class LiveCall(_Strict):
@@ -68,6 +72,10 @@ class Speech(_Strict):
 
 
 class Config(_Strict):
+    # "demo" allows the shortcuts a demo needs: a fixed clock (--at), the synthetic loan book,
+    # a voice bridge with no token, a dashboard reachable from outside. A config that does not
+    # say so is production, where all of those are refused.
+    mode: Literal["demo", "production"] = "production"
     llm_servers: dict[str, LLMServer]
     llm_roles: dict[Role, LLMRole]
     stores: Stores = Stores()
@@ -136,6 +144,7 @@ class LLMFactory:
             max_retries=limits.max_retries if live else 1,
             max_tokens=spec.max_tokens,
             temperature=spec.temperature, disable_thinking=spec.disable_thinking,
+            force_tools=spec.force_tool_on_retry,
             name=f"{spec.server}:{spec.model}")
         return LimitedModel(inner, self.slots[spec.server], background=background,
                             queue_timeout_s=limits.queue_timeout_s if live else None)

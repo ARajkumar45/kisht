@@ -1,0 +1,32 @@
+{
+  "runs": 16,
+  "personas": 8,
+  "k": 2,
+  "pass_1": 0.375,
+  "pass_k": 0.25,
+  "by_category": {
+    "south": {
+      "personas": 8,
+      "pass_1": 0.375,
+      "pass_2": 0.25
+    }
+  },
+  "failed_checks": {
+    "promise": 4,
+    "escalate": 4,
+    "opt_out": 1,
+    "link": 1
+  },
+  "guard_blocks": {
+    "false_claim_blocked": 4,
+    "bad_reason": 1,
+    "missing_fact": 1
+  },
+  "replaced": {
+    "false_claim": 2,
+    "false_promise_claim": 1,
+    "unbacked_link_claim": 1
+  },
+  "median_turn_s": 12.6,
+  "errors": 0
+}

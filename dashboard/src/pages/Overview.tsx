@@ -55,7 +55,7 @@ export default function Overview() {
       </div>
       <Card title="By language" right={<span className="muted small">where the agent is weaker shows up here first</span>}>
         <table>
-          <thead><tr><th>Language</th><th>Conversations</th><th>Promise or link</th><th>Handed to a human</th><th>QA score</th><th>Blocked by code</th></tr></thead>
+          <thead><tr><th scope="col">Language</th><th scope="col">Conversations</th><th scope="col">Promise or link</th><th scope="col">Handed to a human</th><th scope="col">QA score</th><th scope="col">Blocked by code</th></tr></thead>
           <tbody>
             {o.by_language.map((l) => (
               <tr key={l.language}>

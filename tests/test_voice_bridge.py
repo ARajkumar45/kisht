@@ -151,3 +151,21 @@ def test_a_turn_stops_when_the_caller_has_gone_and_saves_no_reply(guard, calls, 
         bridge.turn("run-9", "demo-nbfc:br_1", "haan", on_say=gone)
     said = [m for m in calls.messages(calls.r.get("bolna:run:run-9")) if m["role"] == "assistant"]
     assert len(said) == 1                             # only the greeting
+
+
+def test_no_tool_runs_for_a_turn_the_caller_already_talked_over(guard, calls, account, ledger):
+    from test_agent import tool
+
+    from kisht.voice_bridge import _CallerGone
+
+    heard = []
+    heard_fn = heard.append
+
+    def on_say(piece):
+        heard_fn(piece)
+    on_say.alive = lambda: False                       # the caller cut in while the model wrote
+
+    bridge, _ = make(guard, calls, FakeModel(tool("opt_out")))
+    with pytest.raises(_CallerGone):
+        bridge.turn("run-10", "demo-nbfc:br_1", "hmm", on_say=on_say)
+    assert not ledger.borrower(account[0])["opted_out"]

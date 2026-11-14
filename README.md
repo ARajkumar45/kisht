@@ -224,36 +224,46 @@ same spans to Jaeger, Arize Phoenix or Grafana Tempo as well.
 ## Evaluation
 
 Full run, everything local: Qwen3.5-9B (4-bit, MLX) as both agent and simulated borrower,
-40 personas x 4 runs = 160 conversations, 0 errors, median 15.5 s per turn on an M-series Mac.
+40 personas x 4 runs = 160 conversations, 0 errors, median 20.9 s per turn on an M-series Mac
+(run `local-qwen3.5-9b-v8`).
 
 | Situation | Personas | pass^1 | pass^4 |
 |---|---|---|---|
-| Pay now | 3 | 1.00 | 1.00 |
-| Adversarial (prompt injection, rudeness, "threaten me") | 5 | 0.95 | 0.80 |
-| Opt-out | 2 | 0.88 | 0.50 |
-| Negotiate (part payment, later date) | 6 | 0.71 | 0.33 |
-| Hardship (job loss, illness, death) | 4 | 0.69 | 0.25 |
+| Adversarial (prompt injection, rudeness, "threaten me") | 5 | 0.85 | 0.80 |
+| Pay now | 3 | 0.83 | 0.33 |
+| Opt-out | 2 | 0.75 | 0.50 |
 | Wrong person / identity | 3 | 0.67 | 0.67 |
-| Promise to pay | 8 | 0.62 | 0.25 |
-| Waiver / settlement / restructure | 3 | 0.42 | 0.00 |
-| Dispute ("I already paid") | 2 | 0.38 | 0.00 |
-| Questions about terms (RAG with citation) | 4 | 0.31 | 0.00 |
-| **All** | **40** | **0.67** | **0.38** |
+| Promise to pay | 8 | 0.66 | 0.25 |
+| Dispute ("I already paid") | 2 | 0.62 | 0.50 |
+| Hardship (job loss, illness, death) | 4 | 0.44 | 0.25 |
+| Negotiate (part payment, later date) | 6 | 0.42 | 0.00 |
+| Questions about terms (RAG with citation) | 4 | 0.38 | 0.25 |
+| Waiver / settlement / restructure | 3 | 0.25 | 0.00 |
+| **All** | **40** | **0.58** | **0.33** |
+
+**Read the 58% with its error bar: 47% to 69%** (95% interval, whole personas resampled). An
+earlier build scored 67% (56% to 77%) on the same suite; the two intervals overlap, so the
+honest reading is "about 60%, and no code change so far has moved it". Only **32% of runs are
+clean**: passed, at most one reply replaced by code, right language, no repeated reply, not cut
+off by the 8-turn limit. On 20 **held-out personas** written by a reader who could not see the
+prompt or the guard patterns, the same build passes 60% (42% to 78%), 47% clean.
 
 **Safety held in all 160 runs:** no banned phrase reached the borrower and no account detail was
 shared before identity was verified. That is the guard's job, not the model's: code replaced
-108 replies and blocked 30 out-of-policy actions.
+194 replies and blocked 14 out-of-policy actions.
 
 | What code blocked or replaced | Count |
 |---|---|
-| Agent said "promise saved" when it was not | 57 |
-| Agent said "link sent" without sending one | 19 |
+| Agent said "promise saved" when it was not | 80 |
+| Agent said "link sent" without sending one | 48 |
+| Waiver or "payment received" claim | 22 |
+| Agent offered a date of birth or PIN instead of asking | 17 |
 | Loan detail before identity was verified | 12 |
 | Threat or banned phrase | 10 |
-| Waiver or "payment received" claim | 10 |
-| Promise date beyond the lender's limit | 14 |
-| Part payment below the lender's minimum | 7 |
-| Wrong date of birth / PIN | 8 |
+| "Passed to our team" with no hand-over | 5 |
+| Wrong date of birth / PIN | 19 |
+| Promise date beyond the lender's limit | 9 |
+| Part payment below the lender's minimum | 2 |
 
 **Error analysis changed the code, not just the prompt.** The first run (124 of 160 conversations)
 passed 39%. Reading the failures showed borrowers confirm a promise by repeating it ("haan, kal
@@ -261,15 +271,13 @@ passed 39%. Reading the failures showed borrowers confirm a promise by repeating
 promise was ever saved. After fixing that (D88) the same personas pass 63%, and 67% over the full
 suite. Both runs are in `results/evals/`.
 
-These numbers were measured before later fixes that also apply to Hindi and English (promise
-confirmation with a time of day, repeated tool calls, "I'll record it" without the tool,
-dates in words), so they are a floor, not the current score.
-
-**What still fails, and why:** a 9B local model under-uses `escalate_to_human` (disputes,
-waivers) and often answers fee questions from memory instead of calling `lookup_agreement`.
-Code keeps these failures safe (nothing false is promised), but the borrower is not routed. The
-next steps are a larger model through the same adapter (a config change) and a code-side route
-for "already paid" claims.
+**What still fails, and why:** the limit is the 9B local model, not the guard. It says it
+recorded a promise or sent a link without calling the tool about 27 times per 100 turns, it
+bargains with borrowers in hardship instead of handing over, and it answers fee questions from
+memory. Code keeps these failures safe and now finishes some of them itself (sends the link,
+hands the case to the team, asks for the date), but three rounds of such fixes left the pass
+rate inside the error bar. The next step is a stronger model through the same adapter (a
+config change), measured on the same suite with cost per call.
 
 Method (τ-bench / τ²-bench): an LLM plays a borrower with a hidden persona; the real agent talks
 to it; success is judged **by code on the final ledger state** (right promise saved? escalated
@@ -284,11 +292,11 @@ Small models claim actions they did not take ("I have recorded your promise" wit
 call). Kisht counts it instead of hiding it (`uv run kisht claims`, details in
 [docs/RESULTS.md](docs/RESULTS.md)):
 
-- about **17 such claims per 100 agent turns** over 176 simulated conversations;
-- code stopped **149 of 168** before the borrower heard anything;
-- of the 65.9% of runs that passed, only half passed with no such attempt: **33.0% clean**,
-  the rest because code caught one. Seven passed although a false claim was heard; counted
-  as failures, the pass rate is 61.9%.
+- about **27 such claims per 100 agent turns** over 176 simulated conversations;
+- code stopped **266 of 272** before the borrower heard anything;
+- of the 58.0% of runs that passed, **21.6% passed with no such attempt**, the rest because
+  code caught one. Four passed although a false claim was heard; counted as failures, the
+  pass rate is 55.7%.
 
 ## Run it
 

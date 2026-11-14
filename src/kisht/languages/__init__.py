@@ -57,6 +57,13 @@ class LanguagePack:
     negation: tuple[str, ...] = ()             # "cannot": turns a waiver sentence into a refusal
     paid: tuple[str, ...] = ()
     stall: tuple[str, ...] = ()
+    stop_contact: tuple[str, ...] = ()         # "we will not contact you again"
+    handed_over: tuple[str, ...] = ()          # "I have passed this to our team"
+    # the borrower plainly asks never to be contacted again: code records it, not the model
+    stop_request: tuple[str, ...] = ()
+    # reading the borrower (cues for a note to the model; the model still decides)
+    terms_cue: tuple[str, ...] = ()            # a question the loan agreement answers
+    hardship_cue: tuple[str, ...] = ()         # job loss, illness, a death
     action_words: tuple[str, ...] = ()         # stems: a sentence with one is never said early
     possessive: frozenset[str] = frozenset()   # "your"
     status: frozenset[str] = frozenset()       # "overdue", "baaki" ...

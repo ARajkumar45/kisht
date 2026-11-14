@@ -26,8 +26,9 @@ class OpenAICompatibleModel:
     def __init__(self, *, base_url: str, model: str, api_key: str = "local",
                  timeout_s: float = 60.0, max_tokens: int = 400, temperature: float = 0.3,
                  disable_thinking: bool = True, name: str | None = None,
-                 max_retries: int = 1):
+                 max_retries: int = 1, force_tools: bool = False):
         self.name = name or model
+        self.force_tools = force_tools      # may the caller name a tool the model must call?
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
@@ -54,22 +55,25 @@ class OpenAICompatibleModel:
             pass
 
     def _request(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None,
-                 max_tokens: int | None) -> dict[str, Any]:
+                 max_tokens: int | None, tool_choice: str | None = None) -> dict[str, Any]:
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages,
                                   "max_tokens": max_tokens or self.max_tokens,
                                   "temperature": self.temperature}
         if tools:
             kwargs["tools"] = tools
+            if tool_choice and self.force_tools:
+                kwargs["tool_choice"] = {"type": "function", "function": {"name": tool_choice}}
         if self.extra_body:
             kwargs["extra_body"] = self.extra_body
         return kwargs
 
     def complete(self, messages: list[dict[str, Any]],
                  tools: list[dict[str, Any]] | None = None, *,
-                 max_tokens: int | None = None) -> ModelReply:
+                 max_tokens: int | None = None, tool_choice: str | None = None) -> ModelReply:
         started = time.perf_counter()
         try:
-            resp = self.client.chat.completions.create(**self._request(messages, tools, max_tokens))
+            resp = self.client.chat.completions.create(
+                **self._request(messages, tools, max_tokens, tool_choice))
         except openai.OpenAIError as e:
             raise ModelUnavailable(f"{type(e).__name__}: {e}") from e
         latency = time.perf_counter() - started
@@ -80,11 +84,12 @@ class OpenAICompatibleModel:
                                          for tc in msg.tool_calls or []], resp.usage, latency)
 
     def stream(self, messages: list[dict[str, Any]],
-               tools: list[dict[str, Any]] | None = None, *, on_text: Any) -> ModelReply:
+               tools: list[dict[str, Any]] | None = None, *, on_text: Any,
+               tool_choice: str | None = None) -> ModelReply:
         """Like complete, but hands each piece of text to on_text as the model writes it, so
         a voice call can start speaking the first sentence while the rest is being written
         (measured: the first word comes after 0.1-0.5 s, the whole reply after 2-3 s)."""
-        kwargs = self._request(messages, tools, None)
+        kwargs = self._request(messages, tools, None, tool_choice)
         kwargs.update(stream=True, stream_options={"include_usage": True})
         started = time.perf_counter()
         text, usage, calls = "", None, {}
@@ -182,6 +187,7 @@ class LimitedModel:
         self.background = background
         self.queue_timeout_s = queue_timeout_s
         self.name = inner.name
+        self.force_tools = bool(getattr(inner, "force_tools", False))
 
     def _run(self, call: Any) -> ModelReply:
         waited = self.slots.acquire(timeout_s=self.queue_timeout_s, background=self.background)
@@ -193,14 +199,15 @@ class LimitedModel:
         return reply
 
     def complete(self, messages: list[dict[str, Any]],
-                 tools: list[dict[str, Any]] | None = None) -> ModelReply:
-        return self._run(lambda: self.inner.complete(messages, tools))
+                 tools: list[dict[str, Any]] | None = None, **kw: Any) -> ModelReply:
+        return self._run(lambda: self.inner.complete(messages, tools, **kw))
 
     def stream(self, messages: list[dict[str, Any]],
-               tools: list[dict[str, Any]] | None = None, *, on_text: Any) -> ModelReply:
+               tools: list[dict[str, Any]] | None = None, *, on_text: Any,
+               **kw: Any) -> ModelReply:
         inner = getattr(self.inner, "stream", None)
-        return self._run(lambda: inner(messages, tools, on_text=on_text) if inner
-                         else self.inner.complete(messages, tools))
+        return self._run(lambda: inner(messages, tools, on_text=on_text, **kw) if inner
+                         else self.inner.complete(messages, tools, **kw))
 
     def reachable(self) -> bool:
         reach = getattr(self.inner, "reachable", None)

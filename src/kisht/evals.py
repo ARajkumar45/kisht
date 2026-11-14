@@ -12,12 +12,15 @@ independent and repeatable apart from the models' sampling.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import math
+import random
 import re
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
+from difflib import SequenceMatcher
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -28,7 +31,7 @@ from kisht.audit import AuditLog
 from kisht.confirm import leaks_account
 from kisht.guard import PolicyGuard
 from kisht.knowledge import Agreement
-from kisht.languages import pack
+from kisht.languages import detect, pack
 from kisht.ledger import SqliteLedger
 from kisht.lender import Lender
 from kisht.ports import CallState, ChatModel, ModelUnavailable
@@ -155,6 +158,10 @@ def simulate(persona: Persona, *, lender: Lender, agent_model: ChatModel,
         t = agent.handle(said)
         turns.append({"borrower": said, "agent": t.reply, "tools": t.tool_calls,
                       "refused": t.refused, "replaced": t.replaced,
+                      # what the model wrote before code replaced it: without this a guard
+                      # that blocks a harmless sentence cannot be told from one that was right
+                      "blocked": t.blocked, "prompt_tokens": t.prompt_tokens,
+                      "cached_tokens": t.cached_tokens,
                       "promise_saved": t.promise_saved, "model_calls": t.model_calls,
                       "seconds": round(t.model_latency_s, 2), "fallback": t.fallback})
         if t.fallback:
@@ -233,6 +240,46 @@ def grade(run: dict[str, Any], expect: dict[str, Any], lender: Lender) -> dict[s
     return checks
 
 
+# ---------- quality: what the borrower went through, not only where the ledger ended ----------
+
+MAX_SAFE_LINES = 1        # replies replaced by code that a clean conversation may contain
+SMOKE = ("paynow-en", "promise-salary-hi", "late-date-en", "job-loss-hi", "waiver-latefee-en",
+         "wrong-person-hi", "optout-en", "ask-latefee-hi")   # one per kind: the fast gate
+
+
+def quality(run: dict[str, Any], lender: Lender) -> dict[str, bool]:
+    """A run can reach the right ledger and still be a conversation a person would hang up
+    on (seen: the same "shall I ask our team to call you?" five turns running, in a run that
+    passed). These checks do not change `passed`, so old and new results stay comparable;
+    a run is `clean` only if it passed and every one of these holds."""
+    turns = run["turns"]
+    allowed = lender.languages.allowed
+    wrong_language = 0
+    for t in turns:
+        spoke, answered = detect(t["borrower"], allowed), detect(t["agent"], allowed)
+        if spoke and answered and spoke != answered:
+            wrong_language += 1
+    replies = [t["agent"] for t in turns]
+    repeats = sum(1 for a, b in itertools.pairwise(replies)
+                  if len(a) >= 40 and SequenceMatcher(None, a, b).ratio() >= 0.9)
+    return {"few_safe_lines": sum(1 for t in turns if t["replaced"]) <= MAX_SAFE_LINES,
+            "right_language": wrong_language == 0,
+            "no_repeated_reply": repeats == 0,
+            "not_cut_off": run["ended_by"] != "max_turns"}
+
+
+def interval(by_persona: dict[str, list[bool]], *, draws: int = 2000,
+             seed: int = 0) -> tuple[float, float]:
+    """95% interval for the pass rate, resampling whole personas: four runs of one persona
+    are not four independent results, so runs are never resampled one by one."""
+    rates = [sum(v) / len(v) for v in by_persona.values() if v]
+    if not rates:
+        return 0.0, 0.0
+    rng = random.Random(seed)
+    means = sorted(sum(rng.choices(rates, k=len(rates))) / len(rates) for _ in range(draws))
+    return round(means[int(0.025 * draws)], 3), round(means[int(0.975 * draws) - 1], 3)
+
+
 def pass_hat_k(successes: int, n: int, k: int) -> float:
     """tau-bench's pass^k for one task: chance that k runs drawn from n all succeed."""
     if k > n:
@@ -253,6 +300,9 @@ class Summary:
     replaced: dict[str, int]
     median_turn_s: float
     errors: int
+    pass_1_interval: tuple[float, float] = (0.0, 0.0)    # 95%, personas resampled
+    clean_1: float = 0.0                                  # passed and nothing a person would mind
+    failed_quality: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -260,6 +310,8 @@ class Summary:
 
 def summarise(rows: list[dict[str, Any]], k: int) -> Summary:
     by_p: dict[str, list[bool]] = {}
+    clean_p: dict[str, list[bool]] = {}
+    bad_quality: dict[str, int] = {}
     cat_of: dict[str, str] = {}
     failed: dict[str, int] = {}
     blocks: dict[str, int] = {}
@@ -267,6 +319,12 @@ def summarise(rows: list[dict[str, Any]], k: int) -> Summary:
     turn_s: list[float] = []
     for r in rows:
         by_p.setdefault(r["persona"], []).append(r["passed"])
+        q = r.get("quality")                 # rows from before this check have none
+        if q is not None:
+            clean_p.setdefault(r["persona"], []).append(r["passed"] and all(q.values()))
+            for name, ok in q.items():
+                if not ok:
+                    bad_quality[name] = bad_quality.get(name, 0) + 1
         cat_of[r["persona"]] = r["category"]
         for name, ok in r["checks"].items():
             if not ok:
@@ -293,7 +351,9 @@ def summarise(rows: list[dict[str, Any]], k: int) -> Summary:
                    pass_k=ph(usable, k), by_category=cats, failed_checks=failed,
                    guard_blocks=blocks, replaced=replaced,
                    median_turn_s=turn_s[len(turn_s) // 2] if turn_s else 0.0,
-                   errors=sum(1 for r in rows if r["error"]))
+                   errors=sum(1 for r in rows if r["error"]),
+                   pass_1_interval=interval(by_p), clean_1=ph(clean_p, 1),
+                   failed_quality=bad_quality)
 
 
 def dumps(row: dict[str, Any]) -> str:

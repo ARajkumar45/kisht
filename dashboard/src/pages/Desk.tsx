@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Answer, type Assist, type DeskItem } from "../api";
-import { Badge, Card, CallLink, LANG, Loading, Page, human, rupees, time, useLoad } from "../ui";
+import { Badge, Card, CallLink, LANG, Loading, Page, human, press, rupees, time, useLoad } from "../ui";
 
 const STATUS_TONE: Record<string, string> = { open: "bad", in_progress: "warn", resolved: "good" };
 
@@ -25,7 +25,7 @@ export default function Desk() {
   return (
     <Page title="Human desk" sub="Cases the AI handed over, routed to the right team. Open one for an AI brief, suggested replies and agreement answers.">
       <div className="filters">
-        <select value={team} onChange={(e) => setTeam(e.target.value)}>
+        <select aria-label="Filter by team" value={team} onChange={(e) => setTeam(e.target.value)}>
           <option value="">All teams ({data.length})</option>
           {teams.map((t) => <option key={t} value={t}>{t} ({data.filter((d) => d.team === t).length})</option>)}
         </select>
@@ -36,7 +36,7 @@ export default function Desk() {
           {!shown.length && <div className="muted">No hand-offs yet.</div>}
           <ul className="queue">
             {shown.map((d) => (
-              <li key={d.id} className={d.id === sel ? "sel" : ""} onClick={() => setSel(d.id)}>
+              <li key={d.id} className={d.id === sel ? "sel" : ""} aria-current={d.id === sel || undefined} {...press(() => setSel(d.id))}>
                 <div className="queue-head">
                   <b>{d.borrower_name}</b>
                   <Badge tone={STATUS_TONE[d.status]}>{human(d.status)}</Badge>
@@ -85,15 +85,15 @@ function CaseView({ item, onChange }: { item: DeskItem; onChange: () => void }) 
         <p><b>AI's hand-off note:</b> {item.summary}</p>
         {item.review && <p className="muted">Review: {item.review.summary} (mood: {item.review.sentiment})</p>}
         <div className="form-row">
-          <input placeholder="Assign to (name)" value={assignee} onChange={(e) => setAssignee(e.target.value)} />
+          <input aria-label="Assign to" placeholder="Assign to (name)" value={assignee} onChange={(e) => setAssignee(e.target.value)} />
           <button disabled={busy} onClick={() => run(async () => { await api.updateDesk(item.id, { status: "in_progress", assignee }); onChange(); })}>Take case</button>
         </div>
         <div className="form-row">
-          <input placeholder="Resolution (what was agreed)" value={resolution} onChange={(e) => setResolution(e.target.value)} />
+          <input aria-label="Resolution" placeholder="Resolution (what was agreed)" value={resolution} onChange={(e) => setResolution(e.target.value)} />
           <button disabled={busy || !resolution} onClick={() => run(async () => { await api.updateDesk(item.id, { status: "resolved", resolution }); onChange(); })}>Resolve</button>
         </div>
         <p className="note">The resolution is saved with the borrower's case notes, so the AI knows what was agreed the next time it talks to them.</p>
-        {err && <div className="error">{err}</div>}
+        {err && <div className="error" role="alert">{err}</div>}
       </Card>
       <Card title="Agent assist" right={<button disabled={busy} onClick={() => run(async () => setAssist(await api.assist(item.id)))}>{busy ? "Thinking…" : assist ? "Refresh" : "Brief me"}</button>}>
         {!assist ? <div className="muted">The AI reads the conversation, dues, policy and past notes, and prepares you for the call back.</div> : (
@@ -123,7 +123,7 @@ function AskAgreement() {
   return (
     <Card title="Ask the loan agreement">
       <form className="form-row" onSubmit={async (e) => { e.preventDefault(); setBusy(true); try { setA(await api.ask(q)); } finally { setBusy(false); } }}>
-        <input placeholder="e.g. What is the late fee? Can they foreclose early?" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input aria-label="Question about the loan agreement" placeholder="e.g. What is the late fee? Can they foreclose early?" value={q} onChange={(e) => setQ(e.target.value)} />
         <button disabled={busy || !q}>{busy ? "…" : "Ask"}</button>
       </form>
       {a && (

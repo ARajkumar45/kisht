@@ -40,6 +40,21 @@ def _setup(args):
     return cfg, lender, ledger
 
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def _demo_clock(args):
+    """--at freezes the clock. That also switches off the calling window and the attempt caps
+    (every call happens at the same allowed minute), so it exists for demos only."""
+    if not getattr(args, "at", None):
+        return None
+    if load_config(args.config).mode != "demo":
+        raise SystemExit("--at (a fixed clock) is only allowed when the config says "
+                         "`mode: demo`. In production the real time decides who may be called.")
+    fixed = datetime.fromisoformat(args.at)
+    return lambda: fixed
+
+
 def cmd_health(args) -> int:
     cfg = load_config(args.config)
     factory = LLMFactory(cfg)
@@ -67,10 +82,7 @@ def cmd_due(args) -> int:
 
 
 def cmd_chat(args) -> int:
-    now = None
-    if args.at:
-        fixed = datetime.fromisoformat(args.at)
-        now = lambda: fixed
+    now = _demo_clock(args)
     rt = build(args.config, now=now)
     try:
         rt.calls.r.ping()
@@ -138,10 +150,7 @@ def cmd_plan(args) -> int:
     cfg, lender, ledger = _setup(args)
     calls = RedisCallState.from_url(cfg.stores.redis_url)
     audit = AuditLog(f"{cfg.stores.audit_dir}/kisht_{datetime.now():%Y%m%d}.jsonl")
-    now = None
-    if args.at:
-        fixed = datetime.fromisoformat(args.at)
-        now = lambda: fixed
+    now = _demo_clock(args)
     guard = PolicyGuard(lender, ledger, calls, audit, now=now)
     result = Planner(guard, LLMFactory(cfg).for_role("planner")).plan()
     for p in result.queue[: args.show]:
@@ -166,20 +175,23 @@ def cmd_bridge(args) -> int:
 
     from kisht.voice_bridge import VoiceBridge, create_app
 
-    now = None
-    if args.at:                       # demo clock: a test call works outside the calling window
-        fixed = datetime.fromisoformat(args.at)
-        now = lambda: fixed
+    now = _demo_clock(args)
     rt = build(args.config, audit_name="voice", now=now)
     # live=True: on a call the model gets seconds, not minutes, before the fallback line.
     bridge = VoiceBridge(lenders=rt.lenders, guards=rt.guards, calls=rt.calls,
                          model=rt.models.for_role("agent", live=True), agreements=rt.agreements,
                          insights=rt.insights, reviewer_model=_reviewer(rt))
     _sweeper(rt)                 # a call that just goes quiet still gets its note and review
+    demo = rt.cfg.mode == "demo"
     if not os.environ.get("KISHT_BRIDGE_TOKEN"):
+        if not demo:
+            raise SystemExit("KISHT_BRIDGE_TOKEN is not set. Outside `mode: demo` the bridge "
+                             "does not start without it: anyone who reached the port could "
+                             "open a conversation as any borrower.")
         print("note: KISHT_BRIDGE_TOKEN is not set; fine on this machine only. Set it before "
               "the bridge is reachable from outside (tunnel, Docker).", file=sys.stderr)
-    uvicorn.run(create_app(bridge), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_app(bridge, require_token=not demo), host=args.host, port=args.port,
+                log_level="warning")
     return 0
 
 
@@ -199,6 +211,9 @@ def _sweeper(rt):
 def cmd_simulate(args) -> int:
     from kisht.simulate_day import simulate_day
 
+    if load_config(args.config).mode != "demo":
+        raise SystemExit("simulate writes made-up conversations into the ledger; it only runs "
+                         "when the config says `mode: demo`")
     now = datetime.fromisoformat(args.at) if args.at else datetime.now().astimezone()
     rt = build(args.config, audit_name="simday", now=lambda: now)
     simulate_day(rt, lender_id=args.lender, now=now, n=args.n, workers=args.workers,
@@ -260,11 +275,11 @@ def cmd_serve(args) -> int:
 
     from kisht.api import create_api
 
-    now = None
-    if args.at:                       # demo clock: test chat works outside the calling window
-        fixed = datetime.fromisoformat(args.at)
-        now = lambda: fixed
+    now = _demo_clock(args)
     rt = build(args.config, audit_name="dashboard", now=now)
+    if rt.cfg.mode != "demo" and args.host not in LOOPBACK:
+        raise SystemExit(f"The dashboard has no login yet, so outside `mode: demo` it only "
+                         f"listens on this machine (127.0.0.1), not on {args.host}.")
     _sweeper(rt)
     print(f"Kisht dashboard: http://{args.host}:{args.port}"
           + (f"  (clock fixed at {args.at})" if args.at else ""))

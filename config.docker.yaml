@@ -1,4 +1,7 @@
 # config.yaml for docker compose: same roles, container addresses.
+# demo: synthetic borrowers, fixed clock (--at) allowed. Leave this line out for production.
+mode: demo
+
 llm_servers:
   host:                                   # mlx_lm.server (or any OpenAI-compatible server) on the host
     base_url: http://host.docker.internal:8080/v1

@@ -288,7 +288,7 @@ rules:
     codes: [false_promise_claim, unbacked_link_claim, false_claim]
     tests:
       - tests/test_agent.py::test_claims_only_code_can_make_are_replaced
-      - tests/test_agent.py::test_link_claim_that_persists_is_replaced
+      - tests/test_agent.py::test_link_claim_that_persists_is_made_true_by_code
       - tests/test_agent.py::test_confirmation_claim_without_a_saved_promise_is_replaced
       - tests/test_streaming.py::test_words_written_before_a_tool_call_are_not_said_early
 

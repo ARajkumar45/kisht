@@ -14,7 +14,7 @@ export default function Plan() {
       <Card title={`${data.items.length} accounts`} right={<div className="chips">{Object.entries(data.counts).map(([k, v]) => <Badge key={k} tone={TONE[k]}>{human(k)} {v}</Badge>)}</div>}>
         <table>
           <thead>
-            <tr><th>Priority</th><th>Borrower</th><th>Language</th><th>Overdue</th><th>Channel</th><th>Why (the planner's words)</th><th>Approach</th><th>Result</th></tr>
+            <tr><th scope="col">Priority</th><th scope="col">Borrower</th><th scope="col">Language</th><th scope="col">Overdue</th><th scope="col">Channel</th><th scope="col">Why (the planner's words)</th><th scope="col">Approach</th><th scope="col">Result</th></tr>
           </thead>
           <tbody>
             {data.items.map((i) => (

@@ -1,0 +1,46 @@
+{
+  "runs": 40,
+  "personas": 10,
+  "k": 4,
+  "pass_1": 0.35,
+  "pass_k": 0.2,
+  "by_category": {
+    "hardship": {
+      "personas": 4,
+      "pass_1": 0.375,
+      "pass_4": 0.25
+    },
+    "opt_out": {
+      "personas": 2,
+      "pass_1": 0.875,
+      "pass_4": 0.5
+    },
+    "terms": {
+      "personas": 4,
+      "pass_1": 0.062,
+      "pass_4": 0.0
+    }
+  },
+  "failed_checks": {
+    "no_promise": 2,
+    "escalate": 10,
+    "opt_out": 1,
+    "promise": 6,
+    "cites": 13,
+    "link": 1
+  },
+  "guard_blocks": {
+    "false_claim_blocked": 25,
+    "date_out_of_policy": 1,
+    "leak_blocked": 4,
+    "amount_out_of_policy": 1
+  },
+  "replaced": {
+    "false_promise_claim": 22,
+    "unbacked_link_claim": 3,
+    "guessed_identity": 2,
+    "leak_before_identity": 2
+  },
+  "median_turn_s": 23.12,
+  "errors": 0
+}

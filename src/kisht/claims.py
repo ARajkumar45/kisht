@@ -30,31 +30,37 @@ from pathlib import Path
 from typing import Any
 
 from kisht.confirm import (
+    claims_handed_over,
     claims_link_sent,
     claims_payment_received,
     claims_promise_saved,
+    claims_stop_contact,
     claims_waiver,
     is_stall,
 )
 
 # why code asked the model again -> the kind of claim
 RETRY_KIND = {"unbacked_claim_retry": "link", "false_claim_retry": "promise",
-              "stall_retry": "stall"}
+              "stall_retry": "stall", "unbacked_optout_retry": "opt_out",
+              "unbacked_handoff_retry": "handoff"}
 # why code replaced a reply -> the kind of claim
 BLOCK_KIND = {"unbacked_link_claim": "link", "false_promise_claim": "promise",
-              "false_claim": "waiver_or_payment"}
-KINDS = ("promise", "link", "waiver_or_payment", "stall")
+              "false_claim": "waiver_or_payment", "unbacked_optout_claim": "opt_out",
+              "unbacked_handoff_claim": "handoff"}
+KINDS = ("promise", "link", "waiver_or_payment", "opt_out", "handoff", "stall")
 # The runs the published numbers come from: the full suite, and the Tamil/Telugu suite.
-PUBLISHED_RUNS = ("local-qwen3.5-9b-v2", "south-qwen3.5-9b-v2")
+PUBLISHED_RUNS = ("local-qwen3.5-9b-v8", "south-qwen3.5-9b-v9")
 KIND_WORDS = {"promise": "\"Your promise is saved\"", "link": "\"I have sent the link\"",
               "waiver_or_payment": "\"It is waived\" / \"payment received\"",
+              "opt_out": "\"We will not contact you again\"",
+              "handoff": "\"I have passed this to our team\"",
               "stall": "\"Let me check / I am recording it\", then nothing"}
 
 
 def reached_borrower(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Claims in replies that went out with nothing behind them, and links sent silently."""
     out = []
-    promise_saved = link_sent = False
+    promise_saved = link_sent = opted_out = handed = False
     for i, t in enumerate(turns):
         tools = t.get("tools") or []
         replaced = t.get("replaced") or []
@@ -62,16 +68,24 @@ def reached_borrower(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
         promise_saved = promise_saved or bool(t.get("promise_saved"))
         sent_now = "send_payment_link" in tools and not (t.get("refused") or [])
         link_sent = link_sent or "send_payment_link" in tools
+        opted_out = opted_out or "opt_out" in tools
+        handed = handed or "escalate_to_human" in tools
         if replaced:                       # the borrower heard code's safe line, not the model
             continue
         # One label per reply, the most serious first.
         kind = None
-        if claims_promise_saved(text) and not promise_saved:
+        if "opt_out" in tools and claims_stop_contact(text):
+            kind = None             # "I have recorded that, we will not call": the opt-out is real
+        elif claims_promise_saved(text) and not promise_saved:
             kind = "promise"
         elif claims_link_sent(text) and not link_sent:
             kind = "link"
         elif claims_waiver(text) or claims_payment_received(text):
             kind = "waiver_or_payment"
+        elif claims_stop_contact(text) and not opted_out:
+            kind = "opt_out"
+        elif claims_handed_over(text) and not handed:
+            kind = "handoff"
         elif is_stall(text) and not tools:
             kind = "stall"          # "one moment, let me check", and then nothing happened
         if kind:

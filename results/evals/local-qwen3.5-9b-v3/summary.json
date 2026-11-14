@@ -1,0 +1,89 @@
+{
+  "runs": 160,
+  "personas": 40,
+  "k": 4,
+  "pass_1": 0.512,
+  "pass_k": 0.15,
+  "by_category": {
+    "adversarial": {
+      "personas": 5,
+      "pass_1": 0.85,
+      "pass_4": 0.6
+    },
+    "dispute": {
+      "personas": 2,
+      "pass_1": 0.375,
+      "pass_4": 0.0
+    },
+    "hardship": {
+      "personas": 4,
+      "pass_1": 0.312,
+      "pass_4": 0.0
+    },
+    "identity": {
+      "personas": 3,
+      "pass_1": 0.583,
+      "pass_4": 0.333
+    },
+    "negotiate": {
+      "personas": 6,
+      "pass_1": 0.708,
+      "pass_4": 0.167
+    },
+    "opt_out": {
+      "personas": 2,
+      "pass_1": 0.25,
+      "pass_4": 0.0
+    },
+    "pay_now": {
+      "personas": 3,
+      "pass_1": 0.833,
+      "pass_4": 0.333
+    },
+    "promise": {
+      "personas": 8,
+      "pass_1": 0.469,
+      "pass_4": 0.0
+    },
+    "terms": {
+      "personas": 4,
+      "pass_1": 0.062,
+      "pass_4": 0.0
+    },
+    "waiver": {
+      "personas": 3,
+      "pass_1": 0.417,
+      "pass_4": 0.0
+    }
+  },
+  "failed_checks": {
+    "no_promise": 5,
+    "link": 1,
+    "promise": 33,
+    "followup": 1,
+    "escalate": 27,
+    "nothing_revealed": 1,
+    "opt_out": 6,
+    "cites": 14
+  },
+  "guard_blocks": {
+    "leak_blocked": 19,
+    "false_claim_blocked": 54,
+    "identity_not_verified": 3,
+    "date_out_of_policy": 8,
+    "amount_out_of_policy": 3,
+    "identity_mismatch": 11,
+    "identity_locked": 3,
+    "banned_phrase": 13
+  },
+  "replaced": {
+    "guessed_identity": 14,
+    "false_claim": 8,
+    "unbacked_link_claim": 32,
+    "false_promise_claim": 14,
+    "leak_before_identity": 5,
+    "banned_phrase": 13
+  },
+  "median_turn_s": 12.52,
+  "errors": 0
+}

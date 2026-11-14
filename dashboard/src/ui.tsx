@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 /** Load data once, or every `pollMs` (live views). */
@@ -70,10 +70,23 @@ export function Page({ title, sub, children, actions, stale }: { title: string; 
 export function Loading({ error }: { error?: string | null }) {
   if (error) return <div className="banner" role="alert">Could not load: {error}</div>;
   return (
-    <div className="skeleton" aria-label="Loading">
+    <div className="skeleton" role="status" aria-busy="true" aria-label="Loading">
       <div /><div /><div />
     </div>
   );
+}
+
+/** Props that make a row or list item work like a button: click, Enter or Space. */
+export function press(fn: () => void) {
+  return {
+    tabIndex: 0,
+    onClick: fn,
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      fn();
+    },
+  };
 }
 
 export function Tile({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: string; tone?: "good" | "bad" | "warn" }) {

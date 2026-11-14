@@ -30,7 +30,7 @@ function Status() {
   const { data: h, error } = useLoad(api.health, [], 10000);
   if (!h) return <div className="status">{error ? <Row ok={false} label="Server not reachable" /> : null}</div>;
   return (
-    <div className="status">
+    <div className="status" role="status">
       <Row ok={h.model.ok} label={h.model.ok ? `Model: ${h.model.name}` : "Model server is down"} />
       <Row ok={h.call_state.ok} label={h.call_state.ok ? "Call state: up" : "Redis is down"} />
       <Row ok={h.clock.open} warn label={`Calling hours ${h.clock.window}: ${h.clock.open ? "open" : "closed"}`} />
@@ -42,7 +42,7 @@ function Status() {
 function Row({ ok, label, warn }: { ok: boolean; label: string; warn?: boolean }) {
   return (
     <div className="status-row" title={label}>
-      <span className={`dot ${ok ? "ok" : warn ? "warn" : "down"}`} />
+      <span className={`dot ${ok ? "ok" : warn ? "warn" : "down"}`} aria-hidden="true" />
       <span>{label}</span>
     </div>
   );
@@ -52,9 +52,10 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app">
-        <nav className="side">
+        <a className="skip" href="#main">Skip to content</a>
+        <nav className="side" aria-label="Main">
           <div className="brand">
-            <div className="logo">K</div>
+            <div className="logo" aria-hidden="true">K</div>
             <div>
               <b>Kisht</b>
               <div className="small">EMI contact centre</div>
@@ -68,7 +69,7 @@ function App() {
             Synthetic borrowers only.<br />AI decides, code guards.
           </div>
         </nav>
-        <main>
+        <main id="main" tabIndex={-1}>
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/plan" element={<Plan />} />

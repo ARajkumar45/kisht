@@ -230,7 +230,8 @@ def create_api(rt: Runtime) -> FastAPI:
         guard = next(iter(rt.guards.values()))
         now = guard.now()
         window = guard.lender.contact.window
-        value = {"model": {"ok": model_ok, "name": role.model.split("/")[-1], "server": role.server},
+        value = {"mode": rt.cfg.mode,
+                 "model": {"ok": model_ok, "name": role.model.split("/")[-1], "server": role.server},
                  "call_state": {"ok": redis_ok},
                  "clock": {"now": now.isoformat(timespec="minutes"),
                            "fixed": abs((now - datetime.now(now.tzinfo)).total_seconds()) > 120,
@@ -427,6 +428,12 @@ def create_api(rt: Runtime) -> FastAPI:
         status = body.status or item["status"]
         if status not in ("open", "in_progress", "resolved"):
             raise HTTPException(400, "status must be open, in_progress or resolved")
+        # The ledger row is what the guard reads for the contact hold (R1): keep it in step,
+        # or a resolved case would block agent contact with this borrower for ever.
+        if status == "resolved":
+            rt.ledger.resolve_escalation(eid)
+        else:
+            rt.ledger.reopen_escalation(eid)
         rt.insights.set_desk(eid, team=item["team"], status=status,
                              assignee=body.assignee or item["assignee"],
                              resolution=body.resolution or item["resolution"])

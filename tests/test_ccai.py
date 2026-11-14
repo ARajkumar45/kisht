@@ -58,7 +58,7 @@ def test_take_over_stops_the_model_and_lands_on_the_desk(guard, calls, account, 
 def test_identity_answers_are_masked_in_the_call_log_and_audit(guard, calls, account):
     store = InsightsStore()
     model = FakeModel(tool("verify_identity", date_of_birth="1990-04-02"), tool("get_dues"),
-                      text("Dhanyavaad."), text("Theek hai."))
+                      text("Dhanyavaad."), text("Theek hai."), text("Theek hai."))
     agent = _start(guard, calls, account, model, store)
     agent.handle("Meri DOB 2 April 1990 hai")
     agent.handle("Main 3000 kal de dungi")
@@ -180,9 +180,11 @@ def test_model_is_told_to_check_identity_before_its_first_try(guard, calls, acco
     assert "call verify_identity with it now" in model.requests[1][-1]["content"]
 
 
-def test_prompt_asks_for_short_replies(lender):
-    from kisht.prompt import stable_prefix
-    assert "one or two short sentences" in stable_prefix(lender)
+def test_prompt_asks_for_short_replies_on_voice_only(lender):
+    from kisht.prompt import conversation_line, stable_prefix
+    assert "one or two short sentences" in conversation_line("Priya", "voice")
+    assert "one or two short sentences" not in conversation_line("Priya", "chat")
+    assert "one or two short sentences" not in stable_prefix(lender)
 
 
 def test_call_start_warms_the_model_cache(guard, calls, account):

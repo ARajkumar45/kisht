@@ -1,6 +1,9 @@
 # Which adapter plays which role. Local-first: everything below runs on this Mac.
 # Swap a model server or a role here; no code changes.
 
+# demo: synthetic borrowers, fixed clock (--at) allowed. Leave this line out for production.
+mode: demo
+
 llm_servers:
   local:                                  # mlx_lm.server on this Mac (D79: 1-2 calls at once)
     base_url: http://localhost:8080/v1
@@ -13,7 +16,7 @@ llm_servers:
   #   max_concurrency: 8
 
 llm_roles:
-  agent:     {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.3, max_tokens: 200}
+  agent:     {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.3, max_tokens: 400}
   planner:   {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.2, max_tokens: 900}
   simulator: {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.7, max_tokens: 200}
   reviewer:  {server: local, model: mlx-community/Qwen3.5-9B-4bit, temperature: 0.1, max_tokens: 700}

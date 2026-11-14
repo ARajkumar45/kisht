@@ -111,9 +111,12 @@ class PolicyGuard:
         if held:
             raise GuardRefused("with_human_desk", f"the human desk has an open {held[0]} case "
                                "for this borrower; no agent contact until it is resolved")
-        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_ago = now - timedelta(days=7)
-        recent = [c for c in self.ledger.contacts_since(borrower_id, week_ago.isoformat())
+        self._check_caps(self.ledger.contacts_since(borrower_id, week_ago.isoformat()), now)
+
+    def _check_caps(self, contacts: list[dict], now: datetime) -> None:
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        recent = [c for c in contacts
                   if c["channel"] != "desk"]          # a desk note is not a contact attempt
         today_n = sum(1 for c in recent
                       if datetime.fromisoformat(c["started_utc"]) >= start_of_day)
@@ -128,9 +131,14 @@ class PolicyGuard:
         self.check_contact(borrower_id, channel)
         if self.ledger.loan(loan_id) is None or self.ledger.loan(loan_id)["borrower_id"] != borrower_id:
             raise GuardRefused("loan_mismatch", "loan does not belong to this borrower")
-        contact_id = self.ledger.log_contact(lender_id=self.lender.id, borrower_id=borrower_id,
-                                             loan_id=loan_id, channel=channel, call_id=call_id,
-                                             started_utc=self.now().isoformat())
+        # The caps are checked again here, in the same transaction that logs the attempt:
+        # check_contact above and this insert are two steps, and two workers could both pass.
+        now = self.now()
+        contact_id = self.ledger.log_contact_checked(
+            lambda contacts: self._check_caps(contacts, now),
+            since_utc=(now - timedelta(days=7)).isoformat(), lender_id=self.lender.id,
+            borrower_id=borrower_id, loan_id=loan_id, channel=channel, call_id=call_id,
+            started_utc=now.isoformat())
         self.calls.set_state(call_id, borrower_id=borrower_id, loan_id=loan_id, channel=channel,
                              contact_id=contact_id, identity_verified=False, id_attempts=0)
         return contact_id
@@ -327,6 +335,16 @@ class PolicyGuard:
         eid = self.ledger.add_escalation(loan_id=loan_id, reason=reason, summary=summary[:600],
                                          call_id=call_id)
         self.calls.set_state(call_id, escalated=reason)
+        return {"escalation_id": eid, "desk": self.lender.escalation_desk}
+
+    @_audited("request_callback")
+    def request_callback(self, call_id: str, *, summary: str) -> dict[str, Any]:
+        """Code, not the model, hands the case to the human desk: the borrower accepted the
+        offer of a call from the team, or the agent could not finish what they asked for."""
+        _, loan_id = self._bound(call_id)
+        eid = self.ledger.add_escalation(loan_id=loan_id, reason="callback",
+                                         summary=summary[:600], call_id=call_id)
+        self.calls.set_state(call_id, escalated="callback")
         return {"escalation_id": eid, "desk": self.lender.escalation_desk}
 
     # ---------- supervisor (a human watching the live view) ----------

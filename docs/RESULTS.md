@@ -2,7 +2,46 @@
 
 Measured numbers, newest first. Each section says how it was measured so it can be re-run.
 
-## Does the agent do what it says? (2026-11-13)
+## After the production locks and "never strand the borrower" (D113, D114) (2026-11-14)
+
+How: `uv run python evals/run.py --k 4 --workers 2 --out results/evals/local-qwen3.5-9b-v8`,
+then `--k 2 --personas evals/personas_heldout.yaml` and `--k 2 --only south`. Local
+Qwen3.5-9B (4-bit, MLX) as agent and as simulated borrower. 0 errors.
+
+| Suite | Runs | pass^1 | 95% interval | pass^k | Clean |
+|---|---|---|---|---|---|
+| Main, 40 personas (`local-qwen3.5-9b-v8`) | 160 | 0.58 | 0.47 to 0.69 | 0.33 (k=4) | 0.32 |
+| Held-out, 20 personas (`heldout-qwen3.5-9b-v2`) | 40 | 0.60 | 0.42 to 0.78 | 0.45 (k=2) | 0.47 |
+| Tamil and Telugu, 8 personas (`south-qwen3.5-9b-v9`) | 16 | 0.56 | 0.31 to 0.81 | 0.38 (k=2) | 0.44 |
+| Main, published before (`local-qwen3.5-9b-v2`, re-scored) | 160 | 0.67 | 0.56 to 0.77 | 0.38 (k=4) | 0.38 |
+
+- **The pass rate did not go up.** 58% against 67% before; the intervals overlap. The run
+  between them (`local-qwen3.5-9b-v6`, 56%) showed three ways the new code hurt (D114 h to k);
+  fixing them moved promise from 0.47 to 0.66 and hardship from 0.31 to 0.44, and the total by
+  two points. Code changes are not moving this number on this model.
+- **What did improve:** false claims that reached the borrower fell from 19 to 6 over 176
+  conversations, and the gap between "passed" and "passed with nothing false heard" closed
+  (58.0% against 55.7%; before 65.9% against 61.9%).
+- **What got worse or stayed bad:** the model attempts more unbacked claims (27 per 100 turns,
+  before 17; the patterns are also wider now), 54 of 160 runs hit the 8-turn limit, 52 had two
+  or more replies replaced by code. Main failures: promise not saved 37, no hand-over 25.
+- **Held-out set:** about the same as the main set, so the main number is not inflated by
+  tuning on its personas. Its transcripts have not been read.
+- Clean = passed, at most one reply replaced by code, no reply in the wrong language, no
+  repeated reply, not cut off by the turn limit.
+
+Claims with nothing behind them, `uv run kisht claims --run results/evals/local-qwen3.5-9b-v8
+--run results/evals/south-qwen3.5-9b-v9`:
+
+| Language | Conversations | Agent turns | Claims with nothing behind them | per 100 turns | Fixed by asking again | Replaced by code | Reached the borrower |
+|---|---|---|---|---|---|---|---|
+| en | 64 | 315 | 62 | 19.7 | 30 | 28 | 4 |
+| hi | 96 | 624 | 194 | 31.1 | 66 | 127 | 1 |
+| ta | 8 | 35 | 1 | 2.9 | 1 | 0 | 0 |
+| te | 8 | 45 | 15 | 33.3 | 3 | 11 | 1 |
+| all | 176 | 1019 | 272 | 26.7 | 100 | 166 | 6 |
+
+## Does the agent do what it says? (2026-11-13, earlier build)
 
 A tool-using model can write "I have recorded your promise" or "I have sent the link" with
 no tool call behind it. `uv run kisht claims` counts this from the records

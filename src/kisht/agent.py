@@ -19,28 +19,37 @@ only after the reply so far has passed the same checks as in step 4.
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date
+from difflib import SequenceMatcher
 from typing import Any
 
 from kisht.audit import mask_digits
 from kisht.confirm import (
+    asks_about_terms,
+    asks_to_stop,
+    claims_handed_over,
     claims_link_sent,
     claims_payment_received,
     claims_promise_saved,
+    claims_stop_contact,
     claims_waiver,
+    is_clear_yes,
     is_plain_talk,
     is_stall,
     is_yes_to_promise,
     leaks_account,
+    mentions_hardship,
+    names_a_day,
 )
 from kisht.guard import GuardRefused, PolicyGuard
 from kisht.insights import InsightsStore
 from kisht.knowledge import Agreement
-from kisht.languages import detect
+from kisht.languages import detect, pack
 from kisht.languages import say as pack_say
 from kisht.ports import CallState, ChatModel, ModelUnavailable
 from kisht.prompt import GREETING, build_messages
@@ -63,6 +72,39 @@ UNCHECKED_ID = {"role": "user", "content": (
     "[System note, not from the borrower] The borrower just gave a date of birth or PIN code, "
     "but you did not call verify_identity. Only the tool can say whether it matches: call it "
     "now with what they said, then reply from its result.")}
+NO_OPT_OUT = {"role": "user", "content": (
+    "[System note, not from the borrower] You said we will not contact them again, but you "
+    "did not call opt_out. Only that tool stops contact: call it now if the borrower asked "
+    "for that (no identity check needed); otherwise reply again without that promise.")}
+NO_HANDOFF = {"role": "user", "content": (
+    "[System note, not from the borrower] You said the case is with our team, but you did "
+    "not call escalate_to_human. Only that tool hands a case over: call it now with the "
+    "fitting reason and a short summary; otherwise reply again without that claim.")}
+OFFER_HINT = (" You just offered a call from our team. If the borrower accepts, call "
+              "escalate_to_human now; if they decline, carry on.")
+REPEATING = {"role": "user", "content": (
+    "[System note, not from the borrower] You have already said almost exactly this and it "
+    "did not move the conversation. Do not repeat it. If the borrower cannot pay even the "
+    "minimum, is in hardship, disputes the amount, or wants something you cannot decide, call "
+    "escalate_to_human now. Otherwise take a different next step.")}
+TERMS_HINT = (" The borrower asked about the loan's terms: call lookup_agreement now and "
+              "answer from it, naming the section number. This needs no identity check.")
+HARDSHIP_HINT = (" The borrower spoke of hardship (job loss, illness or a death). Do not "
+                 "bargain: show care, and call escalate_to_human with reason hardship unless "
+                 "they themselves offer to pay.")
+HARDSHIP_TURNS = 2
+CUE_NOTE = "[System note, not from the borrower]"
+NO_PROMISE = {"role": "user", "content": (
+    "[System note, not from the borrower] The borrower named a day. If they mean to pay on "
+    "that day, call record_promise_to_pay now with that date and the amount (the full "
+    "overdue amount if they named none); the tool's read_back is your reply. If they did "
+    "not promise to pay, carry on.")}
+LANGUAGE_HINT = "[System note, not from the borrower] Reply in {name}."
+SAME_REPLY = 0.9          # two replies this alike count as a repeat
+# The second try after these may be made to call the tool (where the model server allows it).
+FORCED_TOOL = {"unbacked_claim_retry": "send_payment_link",
+               "unbacked_handoff_retry": "escalate_to_human",
+               "unchecked_identity_retry": "verify_identity"}
 ID_HINT = {"role": "user", "content": (
     "[System note, not from the borrower] If the borrower just gave a date of birth or PIN "
     "code, call verify_identity with it now, before replying.")}
@@ -78,6 +120,10 @@ AFTER_PROMISE = {"role": "user", "content": (
 
 _SENTENCE_END = re.compile(r"(?<!\bRs)(?<!\bMr)(?<!\bDr)(?<!\bNo)[.!?\u0964](?=\s)")
 MIN_PIECE = 12            # characters; shorter bits wait for the next sentence
+
+
+class CallerGone(Exception):
+    """On a call: the caller spoke over the agent or hung up, so this turn is abandoned."""
 
 
 class _Out:
@@ -102,6 +148,14 @@ class _Out:
 
     def commit(self) -> None:
         self.committed = len(self.pieces)
+
+    def still_listening(self) -> None:
+        """Raises CallerGone if the voice layer says the caller has cut in. Asked before any
+        tool runs: a link must not be sent, or a case opened, for a turn the caller already
+        talked over (before, this was only noticed at the next spoken sentence)."""
+        alive = getattr(self.on_say, "alive", None)
+        if alive is not None and not alive():
+            raise CallerGone
 
     def text(self) -> str:
         return " ".join(p for p, _ in self.pieces)
@@ -175,6 +229,7 @@ class TurnResult:
     tool_calls: list[str] = field(default_factory=list)
     refused: list[str] = field(default_factory=list)      # guard rules that said no this turn
     replaced: list[str] = field(default_factory=list)     # why code replaced the model's reply
+    blocked: list[str] = field(default_factory=list)      # the model's words that were replaced
     promise_saved: bool = False
     ended: str | None = None                              # opt_out / escalate_to_human
     model_calls: int = 0
@@ -196,6 +251,8 @@ class Agent:
         self.lender = guard.lender
         self.calls = calls
         self.model = model
+        self._lead: tuple[int, dict] | None = None     # this turn's language note
+        self._force: str | None = None      # tool the second try must call
         self.tools = ToolRunner(guard, agreement)
         self._amounts: set[int] | None = None
 
@@ -289,8 +346,56 @@ class Agent:
             if out:
                 out(result.reply)
             return result
+        if asks_to_stop(text) and not self.calls.get(self.call_id, "opted_out", False):
+            # "Stop calling me" is not left to the model: the eval showed it agreeing in words
+            # and recording nothing. Code records the opt-out and says so; no model call.
+            done = self.tools.run(self.call_id, "opt_out", "{}")
+            result.tool_calls.append("opt_out")
+            self._log("opt_out_by_code", {"said": text[:200]}, "ok" if done.ok else "error")
+            if done.ok:
+                self.calls.set_state(self.call_id, did_opt_out=True)
+                result.ended = "opt_out"
+                return self._say_now(result, self.say("opted_out"), out)
+            result.tool_calls.pop()      # could not record it: let the model handle the turn
+        if self._last_agent_text() in self._offers() and is_clear_yes(text, self.language):
+            # The agent offered a call from the team and the borrower said yes. Seen in the
+            # eval: the model then carried on talking and no case was ever opened.
+            return self._say_now(result, self._callback(
+                result, "The borrower accepted the offer of a call from the team."), out)
         pending = self.calls.get(self.call_id, "pending_promise")
-        extra: list[dict] = []
+        st = self.calls.get_state(self.call_id)
+        if (st.get("hardship_mentioned") and st.get("identity_verified")
+                and not (st.get("escalated") or pending or st.get("did_save_promise"))):
+            # Seen in the full run: the model told a borrower who had lost her job "we can
+            # plan for 5 December" six turns running and never handed over. The model gets
+            # HARDSHIP_TURNS replies after identity is checked; then code hands over.
+            waited = st.get("hardship_turns", 0)
+            if waited + 1 >= HARDSHIP_TURNS:     # the turn of the mention was the first
+                return self._say_now(result, self._callback(
+                    result, "The borrower spoke of hardship and the agent did not hand the "
+                            "case over."), out)
+            self.calls.set_state(self.call_id, hardship_turns=waited + 1)
+        # Seen in the eval: half the English conversations got a Hindi reply at some point.
+        # Code already follows the borrower's language; the model is told which it is.
+        # Two cues from the borrower's words ride along: the eval showed the model answering
+        # fee questions from memory and bargaining with borrowers who had lost a job.
+        # The language note sits just before the borrower's message, never after it: as the
+        # last message it made the model talk instead of act (43 "link sent" lines with no
+        # link in 55 conversations).
+        at = len(self._built_messages()) - 1
+        self._lead = (at, {"role": "user",
+                           "content": LANGUAGE_HINT.format(name=pack(self.language).name)})
+        hint = ""
+        if asks_about_terms(text):
+            hint += TERMS_HINT
+        if mentions_hardship(text):
+            self.calls.set_state(self.call_id, hardship_mentioned=True)
+        if (self.calls.get(self.call_id, "hardship_mentioned", False)
+                and not self.calls.get(self.call_id, "escalated")):
+            hint += HARDSHIP_HINT          # stays until the case is handed over
+        if self._last_agent_text() in self._offers():
+            hint += OFFER_HINT
+        extra: list[dict] = ([{"role": "user", "content": CUE_NOTE + hint}] if hint else [])
         if (not self.calls.get(self.call_id, "identity_verified", False)
                 and _ID_DETAIL.search(text)):
             # Seen live: the model answered a date of birth in words, was told to use the
@@ -370,7 +475,8 @@ class Agent:
                         out.commit()
                         messages = self._messages() + extra
                     speaker = _Speaker(self, result, out, check_retry=False) if out else None
-                    reply = self._ask([*messages, note], result, retry=True, speaker=speaker)
+                    reply = self._ask([*messages, note], result, retry=True, speaker=speaker,
+                                      force=self._force)
             if not reply.tool_calls:
                 text = (reply.content or "").strip()
                 if not text:
@@ -389,8 +495,10 @@ class Agent:
                 self._log("repeated_tool_calls", {"calls": sorted(n for n, _ in calls)}, "error")
                 pending = self.calls.get(self.call_id, "pending_promise")
                 return (self.say("read_back", read_back=pending["read_back"]) if pending
-                        else self.say("stuck"))
+                        else self._stuck(result))
             seen |= calls
+            if out:
+                out.still_listening()
             self.calls.append(self.call_id, {
                 "role": "assistant", "content": reply.content or None,
                 "tool_calls": [{"id": tc.id, "type": "function",
@@ -413,7 +521,96 @@ class Agent:
                         result.ended = tc.name
                 self.calls.append(self.call_id, done.as_message(tc.id))
         self._log("stuck", {}, "error")
-        return self.say("stuck")
+        return self._stuck(result)
+
+    # ---------- when the model cannot finish: code does, or hands over ----------
+
+    def _say_now(self, result: TurnResult, reply: str, out: _Out | None) -> TurnResult:
+        """A turn code answers by itself: no model call."""
+        result.reply = reply
+        self.calls.append(self.call_id, {"role": "assistant", "content": reply})
+        if out:
+            out(reply)
+        return result
+
+    def _offers(self) -> tuple[str, str]:
+        """The two lines that offer a call from the team."""
+        return self.say("stuck"), self.say("cannot_decide")
+
+    def _stuck(self, result: TurnResult, key: str = "stuck") -> str:
+        """The offer of a team call is made once. Seen in the eval: the same offer five turns
+        running, the borrower saying yes each time, and nothing behind it. If the last thing
+        the agent said was already that offer, code opens the case and says so."""
+        if self._last_agent_text() in self._offers():
+            return self._callback(result, "The agent could not finish what the borrower asked "
+                                          "for, twice in a row.")
+        return self.say(key)
+
+    def _callback(self, result: TurnResult, why: str) -> str:
+        """Code hands the case to the human desk, then says so: the sentence is true because
+        the case exists first."""
+        if not self.calls.get(self.call_id, "escalated"):
+            summary = f"{why} The borrower's last words: {self._last_user_text()[:300]}"
+            try:
+                if self.calls.get(self.call_id, "hardship_mentioned", False):
+                    self.guard.escalate_to_human(self.call_id, reason="hardship",
+                                                 summary=summary)
+                else:
+                    self.guard.request_callback(self.call_id, summary=summary)
+            except GuardRefused:
+                return self.say("stuck")
+            result.tool_calls.append("escalate_to_human")
+            self.calls.set_state(self.call_id, did_escalate_to_human=True)
+            self._log("handoff_by_code", {"why": why}, "ok")
+        result.ended = "escalate_to_human"
+        return self.say("team_will_call")
+
+    def _ask_promise(self, result: TurnResult) -> str:
+        """The model said a promise is saved and none is. Seen in the full run: the offer of a
+        team call here, twice, sent 16 borrowers who only wanted to name a date to the human
+        desk. Code asks the one question a promise needs; only if that was already the last
+        thing said does the offer follow."""
+        ask = self.say("promise_ask")
+        return self._stuck(result) if self._last_agent_text() == ask else ask
+
+    def _hardship_handover(self, result: TurnResult) -> str | None:
+        """A borrower in hardship is never sent a link or asked for a date by code: the case
+        goes to the human desk."""
+        if (self.calls.get(self.call_id, "hardship_mentioned", False)
+                and not self.calls.get(self.call_id, "escalated")):
+            return self._callback(result, "The borrower spoke of hardship and the agent did "
+                                          "not hand the case over.")
+        return None
+
+    def _act_on_claim(self, code: str, result: TurnResult) -> str | None:
+        """The model said it did something and did not call the tool. For two actions code
+        can do it itself, through the same guard, and then say a sentence built from the
+        result: a payment link for what is due, and a hand-over to the team. Everything else
+        (a promise needs an amount and a date; an opt-out must come from the borrower's own
+        words) is not guessed. None means: could not, say the safe line."""
+        if code == "unbacked_handoff_claim":
+            return self._callback(result, "The agent told the borrower the case is with the "
+                                          "team.")
+        if code == "unbacked_link_claim":
+            if self._could_promise() and names_a_day(self._last_user_text()):
+                # Seen in the full run (13 conversations): the borrower said "I will pay on
+                # the 14th", the model said "sending the link for the 14th", code sent a link
+                # and the promise was never recorded. A named day means a promise: ask for it.
+                return self._ask_promise(result)
+            loan_id = self.calls.get(self.call_id, "loan_id")
+            dues = self.guard.ledger.dues(loan_id, self.guard.today()) if loan_id else None
+            amount = (dues.overdue_amount or dues.next_due_amount) if dues else 0
+            if not amount:
+                return None
+            done = self.tools.run(self.call_id, "send_payment_link",
+                                  json.dumps({"amount": amount}))
+            if not done.ok:
+                return None
+            result.tool_calls.append("send_payment_link")
+            self.calls.set_state(self.call_id, did_send_payment_link=True)
+            self._log("link_by_code", {"amount": amount}, "ok")
+            return self.say("link_sent", amount=f"{amount:,}")
+        return None
 
     def _needs_retry(self, text: str, result: TurnResult) -> dict | None:
         """A reply that promises an action the model has not taken gets one more try."""
@@ -421,6 +618,7 @@ class Agent:
         if reason is None:
             return None
         self._log(reason[0], {"reply": text[:300]}, "error")
+        self._force = FORCED_TOOL.get(reason[0])
         return reason[1]
 
     def _retry_reason(self, text: str, result: TurnResult) -> tuple[str, dict] | None:
@@ -432,13 +630,64 @@ class Agent:
             return "unchecked_identity_retry", UNCHECKED_ID
         if claims_link_sent(text) and "send_payment_link" not in result.tool_calls:
             return "unbacked_claim_retry", UNBACKED
-        if (claims_promise_saved(text) and not result.promise_saved
+        if (claims_promise_saved(text) and not self._promise_backed(result)
                 and not self.calls.get(self.call_id, "pending_promise")):
             # Seen live: "maine record kar liya hai" with no tool call and no promise waiting.
             # It would be blocked anyway; one more try can bring the real tool call. (With a
             # promise waiting, the read-back is the right answer and needs no model.)
             return "false_claim_retry", NOTE
+        if claims_handed_over(text) and not self._handed_over(result):
+            # Seen in the eval: "I am forwarding this to our team", four turns running, and
+            # no escalation ever made.
+            return "unbacked_handoff_retry", NO_HANDOFF
+        if claims_stop_contact(text) and not self._opted_out(result):
+            # Seen in the eval: "I will not contact you again", nothing recorded, call over.
+            return "unbacked_optout_retry", NO_OPT_OUT
+        if (not result.tool_calls and self._could_promise()
+                and names_a_day(self._last_user_text())):
+            # Seen in the eval, the most common failure: the borrower says "I'll pay on the
+            # 14th" and the model chats on without recording it.
+            return "unrecorded_promise_retry", NO_PROMISE
+        if not result.tool_calls and self._said_before(text):
+            # Seen in the eval: the same refusal five times to a borrower in hardship.
+            return "repeat_retry", REPEATING
         return None
+
+    def _promise_backed(self, result: TurnResult) -> bool:
+        """True in the turn a promise is saved, and afterwards while no new one is waiting:
+        "your promise is saved", said again later, is a fact, not a claim."""
+        return result.promise_saved or (
+            bool(self.calls.get(self.call_id, "did_save_promise", False))
+            and not self.calls.get(self.call_id, "pending_promise"))
+
+    def _could_promise(self) -> bool:
+        st = self.calls.get_state(self.call_id)
+        return bool(st.get("identity_verified")) and not (
+            st.get("pending_promise") or st.get("did_save_promise") or st.get("escalated")
+            or st.get("hardship_mentioned"))
+
+    def _handed_over(self, result: TurnResult) -> bool:
+        return ("escalate_to_human" in result.tool_calls
+                or bool(self.calls.get(self.call_id, "escalated")))
+
+    def _last_agent_text(self) -> str:
+        for m in reversed(self.calls.messages(self.call_id)):
+            if m.get("role") == "assistant":
+                return m.get("content") or ""
+        return ""
+
+    def _opted_out(self, result: TurnResult) -> bool:
+        return ("opt_out" in result.tool_calls
+                or bool(self.calls.get(self.call_id, "opted_out", False)))
+
+    def _said_before(self, text: str) -> bool:
+        new = " ".join(text.lower().split())
+        if len(new) < 60:
+            return False
+        said = [m.get("content") or "" for m in self.calls.messages(self.call_id)
+                if m.get("role") == "assistant"][-3:]
+        return any(SequenceMatcher(None, new, " ".join(s.lower().split())).ratio() >= SAME_REPLY
+                   for s in said)
 
     def _last_user_text(self) -> str:
         for m in reversed(self.calls.messages(self.call_id)):
@@ -465,12 +714,16 @@ class Agent:
             # Seen live: "is your date of birth 1990-05-15?" (invented). The agent asks for
             # the detail; it never offers one, real or not.
             return "guessed_identity"
-        if claims_promise_saved(text) and not result.promise_saved:
+        if claims_promise_saved(text) and not self._promise_backed(result):
             return "false_promise_claim"
         if claims_link_sent(text) and "send_payment_link" not in result.tool_calls:
             return "unbacked_link_claim"
         if claims_waiver(text) or claims_payment_received(text):
             return "false_claim"
+        if claims_stop_contact(text) and not self._opted_out(result):
+            return "unbacked_optout_claim"
+        if claims_handed_over(text) and not self._handed_over(result):
+            return "unbacked_handoff_claim"
         return None
 
     def _checked_inner(self, text: str, result: TurnResult) -> str:
@@ -478,6 +731,7 @@ class Agent:
         if code is None:
             return text
         result.replaced.append(code)
+        result.blocked.append(text[:400])
         if code == "banned_phrase":
             self.guard.check_reply(self.call_id, text)          # writes the audit entry
             return self.say("polite")
@@ -487,9 +741,27 @@ class Agent:
             return self.say("verify_first")
         if code == "false_promise_claim":
             pending = self.calls.get(self.call_id, "pending_promise")
-            return (self.say("read_back", read_back=pending["read_back"]) if pending
-                    else self.say("stuck"))
-        return self.say("stuck" if code == "unbacked_link_claim" else "cannot_decide")
+            if pending:
+                return self.say("read_back", read_back=pending["read_back"])
+            return self._hardship_handover(result) or self._ask_promise(result)
+        if code == "false_claim" and claims_payment_received(text) and not claims_waiver(text):
+            # Seen in the first run after D114: the borrower says "I have paid", the model
+            # answers "your payment is complete" (it cannot know), and the blocked reply became
+            # an offer of a team call, which then opened a case for someone who had just paid.
+            # There is nothing to decide here: say what is true and stop.
+            return self.say("payment_pending")
+        # Not after "your promise is saved": that closing line stays alone (see _handle), so
+        # an action taken here would never be told to the borrower.
+        acted = None if result.promise_saved else (
+            self._hardship_handover(result) or self._act_on_claim(code, result))
+        if acted:
+            return acted
+        if (code == "unbacked_link_claim"
+                and not self.calls.get(self.call_id, "identity_verified", False)):
+            return self.say("verify_first")       # a link needs identity first: ask for it
+        return self._stuck(result, "stuck" if code in ("unbacked_link_claim",
+                                                       "unbacked_optout_claim")
+                           else "cannot_decide")
 
     # ---------- end of conversation: outcome + case note (memory) ----------
 
@@ -547,19 +819,29 @@ class Agent:
         return self._amounts
 
     def _messages(self) -> list[dict]:
+        out = self._built_messages()
+        lead = self._lead
+        if lead and lead[0] <= len(out):
+            out.insert(lead[0], lead[1])
+        return out
+
+    def _built_messages(self) -> list[dict]:
         return build_messages(self.lender, self.calls.messages(self.call_id), self.guard.today(),
                               self.calls.get(self.call_id, "first_name", "the borrower"),
                               self.calls.get(self.call_id, "channel", "chat"))
 
     def _ask(self, messages: list[dict], result: TurnResult, retry: bool = False,
-             speaker: _Speaker | None = None):
+             speaker: _Speaker | None = None, force: str | None = None):
         with child_span("chat", gen_ai__operation__name="chat",
                         gen_ai__request__model=getattr(self.model, "name", "model"),
                         kisht__retry=retry or None) as span:
             try:
                 stream = getattr(self.model, "stream", None) if speaker else None
-                reply = (stream(messages, TOOL_SCHEMAS, on_text=speaker.feed) if stream
-                         else self.model.complete(messages, TOOL_SCHEMAS))
+                # Only a model that says it accepts a forced tool is sent one.
+                kw = ({"tool_choice": force}
+                      if force and getattr(self.model, "force_tools", False) else {})
+                reply = (stream(messages, TOOL_SCHEMAS, on_text=speaker.feed, **kw) if stream
+                         else self.model.complete(messages, TOOL_SCHEMAS, **kw))
             except ModelUnavailable as e:
                 mark_error(span, str(e)[:200])
                 raise

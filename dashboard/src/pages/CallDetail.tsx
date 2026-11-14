@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type QAResult, type Review, type Span, type Turn } from "../api";
-import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, rupees, useLoad } from "../ui";
+import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, press, rupees, useLoad } from "../ui";
 
 export default function CallDetail() {
   const { id = "" } = useParams();
@@ -37,7 +37,7 @@ export default function CallDetail() {
                     const shown = q.human?.result ?? q.result;
                     return (
                       <li key={q.id} className={shown}>
-                        <span className="qa-mark">{shown === "pass" ? "✓" : shown === "fail" ? "✗" : "–"}</span>
+                        <span className="qa-mark" role="img" aria-label={shown === "pass" ? "Passed" : shown === "fail" ? "Failed" : "Not applicable"}>{shown === "pass" ? "✓" : shown === "fail" ? "✗" : "–"}</span>
                         <div>
                           <b>{q.check}</b>
                           {q.evidence && <div className="muted small">{q.by === "code" ? "Code: " : ""}{q.evidence}</div>}
@@ -151,19 +151,19 @@ function HumanReview({ callId, review, onSaved }: { callId: string; review: Revi
       {review.qa.filter((q) => q.by !== "code").map((q) => (
         <div className="human-row" key={q.id}>
           <span>{q.check}</span>
-          <span className="seg">
+          <span className="seg" role="group" aria-label={q.check}>
             {(["pass", "fail", "na"] as QAResult[]).map((r) => (
-              <button key={r} type="button" className={marks[q.id] === r ? `on ${r}` : ""} onClick={() => setMarks({ ...marks, [q.id]: r })}>{r === "na" ? "n/a" : r}</button>
+              <button key={r} type="button" className={marks[q.id] === r ? `on ${r}` : ""} aria-pressed={marks[q.id] === r} onClick={() => setMarks({ ...marks, [q.id]: r })}>{r === "na" ? "n/a" : r}</button>
             ))}
           </span>
         </div>
       ))}
       <div className="form-row">
-        <input placeholder="Your name" value={by} onChange={(e) => setBy(e.target.value)} />
+        <input aria-label="Your name" placeholder="Your name" value={by} onChange={(e) => setBy(e.target.value)} />
         <button disabled={busy} onClick={save}>{busy ? "Saving…" : "Save review"}</button>
         <button className="secondary" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
       </div>
-      {err && <div className="error">{err}</div>}
+      {err && <div className="error" role="alert">{err}</div>}
     </div>
   );
 }
@@ -216,8 +216,8 @@ function Trace({ spans }: { spans: Span[] }) {
         const bad = s.status === "ERROR" || (s.name === "reply_check" && Array.isArray(s.attrs["kisht.replaced"]) && (s.attrs["kisht.replaced"] as unknown[]).length > 0);
         return (
           <div key={s.span_id}>
-            <div className={`span-row ${s.name} ${bad ? "bad" : ""}`} onClick={() => setOpen(open === s.span_id ? null : s.span_id)}>
-              <div className="span-name" style={{ paddingLeft: d * 16 }}>{label}</div>
+            <div className={`span-row ${s.name} ${bad ? "bad" : ""}`} role="button" aria-expanded={open === s.span_id} {...press(() => setOpen(open === s.span_id ? null : s.span_id))}>
+              <div className="span-name" style={{ paddingLeft: `calc(${d} * var(--space-6))` }}>{label}</div>
               <div className="span-track">
                 <div className="span-bar" style={{ left: `${(100 * (at(s) - t0)) / total}%`, width: `max(2px, ${(100 * (s.end_ns - s.start_ns)) / total}%)` }} />
               </div>
