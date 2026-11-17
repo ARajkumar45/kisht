@@ -212,6 +212,16 @@ class InsightsStore:
         return [_row(r, ("tools", "refused", "replaced")) for r in self.db.execute(
             "SELECT * FROM turns WHERE call_id=? ORDER BY idx", (call_id,))]
 
+    def flagged_turns(self, call_ids: list[str]) -> list[dict[str, Any]]:
+        """Turns where the guard refused a tool or replaced a reply, for these calls, in one
+        query (the live page used to read every turn of every recent call)."""
+        if not call_ids:
+            return []
+        marks = ",".join("?" * len(call_ids))
+        return [_row(r, ("tools", "refused", "replaced")) for r in self.db.execute(
+            f"SELECT * FROM turns WHERE call_id IN ({marks}) "
+            "AND (refused != '[]' OR replaced != '[]') ORDER BY call_id, idx", call_ids)]
+
     # ---------- traces ----------
 
     def add_spans(self, spans: list[dict[str, Any]]) -> None:

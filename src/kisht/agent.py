@@ -20,7 +20,6 @@ only after the reply so far has passed the same checks as in step 4.
 from __future__ import annotations
 
 import json
-import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -39,7 +38,6 @@ from kisht.confirm import (
     claims_stop_contact,
     claims_waiver,
     is_clear_yes,
-    is_plain_talk,
     is_stall,
     is_yes_to_promise,
     leaks_account,
@@ -51,176 +49,35 @@ from kisht.insights import InsightsStore
 from kisht.knowledge import Agreement
 from kisht.languages import detect, pack
 from kisht.languages import say as pack_say
+from kisht.nudges import (
+    AFTER_PROMISE,
+    COACH,
+    CUE_NOTE,
+    FORCED_TOOL,
+    HARDSHIP_HINT,
+    HARDSHIP_TURNS,
+    ID_DETAIL,
+    ID_HINT,
+    LANGUAGE_HINT,
+    NO_HANDOFF,
+    NO_OPT_OUT,
+    NO_PROMISE,
+    NOTE,
+    OFFER_HINT,
+    REPEATING,
+    SAME_REPLY,
+    TERMS_HINT,
+    UNBACKED,
+    UNCHECKED_ID,
+)
 from kisht.ports import CallState, ChatModel, ModelUnavailable
 from kisht.prompt import GREETING, build_messages
+from kisht.speaking import CallerGone, Out, Speaker  # noqa: F401 - CallerGone is part of this API
 from kisht.tools import TOOL_SCHEMAS, ToolRunner
 from kisht.tracing import call_span, child_span, mark_error, set_attrs
 
 MAX_TOOL_ROUNDS = 6
 ENDING_ACTIONS = {"opt_out", "escalate_to_human"}
-
-
-NOTE = {"role": "user", "content": (
-    "[System note, not from the borrower] Do not answer from memory and do not say 'let me "
-    "check' or 'I will record it'. Use the tools now (verify_identity first if not done; "
-    "record_promise_to_pay if the borrower named a date), then answer from the results.")}
-UNBACKED = {"role": "user", "content": (
-    "[System note, not from the borrower] You said you sent or will send a payment link, but "
-    "you did not call send_payment_link. Call it now if the borrower wants a link; otherwise "
-    "reply again without claiming a link.")}
-UNCHECKED_ID = {"role": "user", "content": (
-    "[System note, not from the borrower] The borrower just gave a date of birth or PIN code, "
-    "but you did not call verify_identity. Only the tool can say whether it matches: call it "
-    "now with what they said, then reply from its result.")}
-NO_OPT_OUT = {"role": "user", "content": (
-    "[System note, not from the borrower] You said we will not contact them again, but you "
-    "did not call opt_out. Only that tool stops contact: call it now if the borrower asked "
-    "for that (no identity check needed); otherwise reply again without that promise.")}
-NO_HANDOFF = {"role": "user", "content": (
-    "[System note, not from the borrower] You said the case is with our team, but you did "
-    "not call escalate_to_human. Only that tool hands a case over: call it now with the "
-    "fitting reason and a short summary; otherwise reply again without that claim.")}
-OFFER_HINT = (" You just offered a call from our team. If the borrower accepts, call "
-              "escalate_to_human now; if they decline, carry on.")
-REPEATING = {"role": "user", "content": (
-    "[System note, not from the borrower] You have already said almost exactly this and it "
-    "did not move the conversation. Do not repeat it. If the borrower cannot pay even the "
-    "minimum, is in hardship, disputes the amount, or wants something you cannot decide, call "
-    "escalate_to_human now. Otherwise take a different next step.")}
-TERMS_HINT = (" The borrower asked about the loan's terms: call lookup_agreement now and "
-              "answer from it, naming the section number. This needs no identity check.")
-HARDSHIP_HINT = (" The borrower spoke of hardship (job loss, illness or a death). Do not "
-                 "bargain: show care, and call escalate_to_human with reason hardship unless "
-                 "they themselves offer to pay.")
-HARDSHIP_TURNS = 2
-CUE_NOTE = "[System note, not from the borrower]"
-NO_PROMISE = {"role": "user", "content": (
-    "[System note, not from the borrower] The borrower named a day. If they mean to pay on "
-    "that day, call record_promise_to_pay now with that date and the amount (the full "
-    "overdue amount if they named none); the tool's read_back is your reply. If they did "
-    "not promise to pay, carry on.")}
-LANGUAGE_HINT = "[System note, not from the borrower] Reply in {name}."
-SAME_REPLY = 0.9          # two replies this alike count as a repeat
-# The second try after these may be made to call the tool (where the model server allows it).
-FORCED_TOOL = {"unbacked_claim_retry": "send_payment_link",
-               "unbacked_handoff_retry": "escalate_to_human",
-               "unchecked_identity_retry": "verify_identity"}
-ID_HINT = {"role": "user", "content": (
-    "[System note, not from the borrower] If the borrower just gave a date of birth or PIN "
-    "code, call verify_identity with it now, before replying.")}
-_ID_DETAIL = re.compile(r"\b\d{6}\b|\b(19[4-9]\d|200\d)\b")   # a PIN, or a birth year
-COACH = ("[Private note from your supervisor, not from the borrower] {note}\nFollow it in your "
-         "next reply if your rules allow. Never mention the supervisor or this note.")
-AFTER_PROMISE = {"role": "user", "content": (
-    "[System note, not from the borrower] The promise is saved and the borrower has heard "
-    "that. Schedule a follow-up for the day after the promised date with schedule_followup, "
-    "then close the conversation warmly in one or two sentences.")}
-
-
-
-_SENTENCE_END = re.compile(r"(?<!\bRs)(?<!\bMr)(?<!\bDr)(?<!\bNo)[.!?\u0964](?=\s)")
-MIN_PIECE = 12            # characters; shorter bits wait for the next sentence
-
-
-class CallerGone(Exception):
-    """On a call: the caller spoke over the agent or hung up, so this turn is abandoned."""
-
-
-class _Out:
-    """What the borrower has heard so far in this turn, in order."""
-
-    def __init__(self, on_say: Any):
-        self.on_say = on_say
-        self.pieces: list[tuple[str, bool]] = []      # (text, is a filler line)
-        self.committed = 0                            # pieces already saved in the transcript
-        self.done = False                             # the model's own reply went out through here
-        self.started = time.perf_counter()
-        self.first_s: float | None = None
-
-    def __call__(self, piece: str, filler: bool = False) -> None:
-        piece = (piece or "").strip()
-        if not piece:
-            return
-        if self.first_s is None:
-            self.first_s = time.perf_counter() - self.started
-        self.pieces.append((piece, filler))
-        self.on_say(piece)
-
-    def commit(self) -> None:
-        self.committed = len(self.pieces)
-
-    def still_listening(self) -> None:
-        """Raises CallerGone if the voice layer says the caller has cut in. Asked before any
-        tool runs: a link must not be sent, or a case opened, for a turn the caller already
-        talked over (before, this was only noticed at the next spoken sentence)."""
-        alive = getattr(self.on_say, "alive", None)
-        if alive is not None and not alive():
-            raise CallerGone
-
-    def text(self) -> str:
-        return " ".join(p for p, _ in self.pieces)
-
-    def uncommitted(self) -> str:
-        return " ".join(p for p, filler in self.pieces[self.committed:] if not filler)
-
-
-class _Speaker:
-    """Releases the start of a model reply while the rest is still being written. A sentence
-    goes out early only if the reply up to and including it is plain talk (no number, no word
-    about an action) and passes every check a whole reply must pass. From the first sentence
-    that is not, everything waits until the model has finished: if a tool call follows, that
-    text is dropped, as it always was; if not, the whole reply is checked and said."""
-
-    def __init__(self, agent: Agent, result: TurnResult, out: _Out, check_retry: bool):
-        self.agent, self.result, self.out, self.check_retry = agent, result, out, check_retry
-        self.quiet = result.promise_saved    # after "your promise is saved", no "sorry" line
-        self.text = ""
-        self.said = 0             # characters of self.text already released
-        self.stopped = False
-
-    def feed(self, piece: str) -> None:
-        if self.stopped:
-            return
-        self.text += piece
-        if "<think" in self.text or "<tool_call" in self.text:
-            self.stopped = True
-            return
-        end = None
-        for m in _SENTENCE_END.finditer(self.text, self.said):
-            end = m.end()
-        if end is None or end - self.said < MIN_PIECE:
-            return
-        ready = self.text[:end]
-        # The model is never cut off here, even when this reply will be asked again ("I am
-        # recording it" with no tool yet): tried live, and the cut sometimes removed the very
-        # tool call that was about to follow the words.
-        if (not is_plain_talk(ready) or self.agent._violation(ready, self.result)
-                or (self.check_retry and self.agent._retry_reason(ready, self.result))):
-            self.stopped = True          # the rest waits for the whole reply and its checks
-            return
-        self.out(self.text[self.said:end])
-        self.said = end
-
-    def heard(self) -> str:
-        return self.text[:self.said].strip()
-
-    def finish(self, full: str) -> str:
-        """The model has finished: check the whole reply, release what is left."""
-        heard = self.heard()
-        checked = self.agent._checked(full, self.result)
-        if checked == full and full.startswith(heard):
-            self.out(full[len(heard):])
-            self.out.done = True
-            return full
-        if not heard:
-            return checked        # nothing was heard: the caller says the safe line instead
-        # The clean start was heard; the blocked rest is replaced by the safe line (seen
-        # live without it: the borrower heard only "Okay, Sunita." and then silence).
-        self.out.done = True
-        if not self.quiet:
-            self.out(checked)
-            return f"{heard} {checked}"
-        return heard
 
 
 @dataclass
@@ -309,7 +166,7 @@ class Agent:
         with call_span(self.call_id, "turn", kisht__channel=self.calls.get(
                 self.call_id, "channel", "chat")) as span:
             was_verified = self.calls.get(self.call_id, "identity_verified", False)
-            result = self._handle(text, _Out(on_say) if on_say else None)
+            result = self._handle(text, Out(on_say) if on_say else None)
             set_attrs(span, kisht__language=self.language, kisht__tools=result.tool_calls,
                       kisht__first_say_s=(round(result.first_say_s, 2)
                                           if result.first_say_s is not None else None),
@@ -323,7 +180,7 @@ class Agent:
             # The call log is read by supervisors and reviewers; a date of birth or PIN code
             # has no business there. The live conversation state (Redis, expiring) keeps it.
             identity_answer = "verify_identity" in result.tool_calls or (
-                not was_verified and _ID_DETAIL.search(text))
+                not was_verified and ID_DETAIL.search(text))
             self.insights.add_turn(
                 self.call_id, borrower=mask_digits(text) if identity_answer else text,
                 agent=result.reply, language=self.language, coach=result.coach,
@@ -334,80 +191,18 @@ class Agent:
                          else None))
         return result
 
-    def _handle(self, text: str, out: _Out | None = None) -> TurnResult:
+    def _handle(self, text: str, out: Out | None = None) -> TurnResult:
         started = time.perf_counter()
         self._amounts = None
         self.calls.append(self.call_id, {"role": "user", "content": text})
         self._follow_language(text)
         result = TurnResult(reply="")
-        if self.calls.get(self.call_id, "takeover"):
-            # A supervisor took this conversation over: the model is not asked again.
-            result.reply, result.ended = self.say("handover"), "escalate_to_human"
-            self.calls.append(self.call_id, {"role": "assistant", "content": result.reply})
-            if out:
-                out(result.reply)
-            return result
-        if asks_to_stop(text) and not self.calls.get(self.call_id, "opted_out", False):
-            # "Stop calling me" is not left to the model: the eval showed it agreeing in words
-            # and recording nothing. Code records the opt-out and says so; no model call.
-            done = self.tools.run(self.call_id, "opt_out", "{}")
-            result.tool_calls.append("opt_out")
-            self._log("opt_out_by_code", {"said": text[:200]}, "ok" if done.ok else "error")
-            if done.ok:
-                self.calls.set_state(self.call_id, did_opt_out=True)
-                result.ended = "opt_out"
-                return self._say_now(result, self.say("opted_out"), out)
-            result.tool_calls.pop()      # could not record it: let the model handle the turn
-        if self._last_agent_text() in self._offers() and is_clear_yes(text, self.language):
-            # The agent offered a call from the team and the borrower said yes. Seen in the
-            # eval: the model then carried on talking and no case was ever opened.
-            return self._say_now(result, self._callback(
-                result, "The borrower accepted the offer of a call from the team."), out)
-        pending = self.calls.get(self.call_id, "pending_promise")
-        st = self.calls.get_state(self.call_id)
-        if (st.get("hardship_mentioned") and st.get("identity_verified")
-                and not (st.get("escalated") or pending or st.get("did_save_promise"))):
-            # Seen in the full run: the model told a borrower who had lost her job "we can
-            # plan for 5 December" six turns running and never handed over. The model gets
-            # HARDSHIP_TURNS replies after identity is checked; then code hands over.
-            waited = st.get("hardship_turns", 0)
-            if waited + 1 >= HARDSHIP_TURNS:     # the turn of the mention was the first
-                return self._say_now(result, self._callback(
-                    result, "The borrower spoke of hardship and the agent did not hand the "
-                            "case over."), out)
-            self.calls.set_state(self.call_id, hardship_turns=waited + 1)
-        # Seen in the eval: half the English conversations got a Hindi reply at some point.
-        # Code already follows the borrower's language; the model is told which it is.
-        # Two cues from the borrower's words ride along: the eval showed the model answering
-        # fee questions from memory and bargaining with borrowers who had lost a job.
-        # The language note sits just before the borrower's message, never after it: as the
-        # last message it made the model talk instead of act (43 "link sent" lines with no
-        # link in 55 conversations).
-        at = len(self._built_messages()) - 1
-        self._lead = (at, {"role": "user",
-                           "content": LANGUAGE_HINT.format(name=pack(self.language).name)})
-        hint = ""
-        if asks_about_terms(text):
-            hint += TERMS_HINT
-        if mentions_hardship(text):
-            self.calls.set_state(self.call_id, hardship_mentioned=True)
-        if (self.calls.get(self.call_id, "hardship_mentioned", False)
-                and not self.calls.get(self.call_id, "escalated")):
-            hint += HARDSHIP_HINT          # stays until the case is handed over
-        if self._last_agent_text() in self._offers():
-            hint += OFFER_HINT
-        extra: list[dict] = ([{"role": "user", "content": CUE_NOTE + hint}] if hint else [])
-        if (not self.calls.get(self.call_id, "identity_verified", False)
-                and _ID_DETAIL.search(text)):
-            # Seen live: the model answered a date of birth in words, was told to use the
-            # tool, and only then called it. Saying so up front saves that wasted round.
-            extra.append(ID_HINT)
-        note = self.calls.get(self.call_id, "supervisor_note")
-        if note:
-            self.calls.clear(self.call_id, "supervisor_note")
-            result.coach = note
-            extra.append({"role": "user", "content": COACH.format(note=note)})
+        done = self._code_turn(text, result, out)
+        if done is not None:
+            return done
+        extra = self._cues(text, result)
         prefix = ""
+        pending = self.calls.get(self.call_id, "pending_promise")
         if pending and is_yes_to_promise(text, pending["amount"],
                                          date.fromisoformat(pending["pay_date"]),
                                          self.guard.today(), self.language):
@@ -421,6 +216,80 @@ class Agent:
         except ModelUnavailable as e:
             self._log("model_unavailable", {"error": str(e)[:300]}, "error")
             reply, result.fallback = self.say("fallback"), True
+        return self._end_turn(result, reply, prefix, out, started)
+
+    def _code_turn(self, text: str, result: TurnResult, out: Out | None) -> TurnResult | None:
+        """Turns code answers without asking the model. None means: the model's turn."""
+        if self.calls.get(self.call_id, "takeover"):
+            # A supervisor took this conversation over: the model is not asked again.
+            result.ended = "escalate_to_human"
+            return self._say_now(result, self.say("handover"), out)
+        if asks_to_stop(text) and not self.calls.get(self.call_id, "opted_out", False):
+            # "Stop calling me" is not left to the model: the eval showed it agreeing in words
+            # and recording nothing. Code records the opt-out and says so; no model call.
+            done = self.tools.run(self.call_id, "opt_out", "{}")
+            self._log("opt_out_by_code", {"said": text[:200]}, "ok" if done.ok else "error")
+            if done.ok:
+                result.tool_calls.append("opt_out")
+                self.calls.set_state(self.call_id, did_opt_out=True)
+                result.ended = "opt_out"
+                return self._say_now(result, self.say("opted_out"), out)
+            # could not record it: let the model handle the turn
+        if self._last_agent_text() in self._offers() and is_clear_yes(text, self.language):
+            # The agent offered a call from the team and the borrower said yes. Seen in the
+            # eval: the model then carried on talking and no case was ever opened.
+            return self._say_now(result, self._callback(
+                result, "The borrower accepted the offer of a call from the team."), out)
+        st = self.calls.get_state(self.call_id)
+        if (st.get("hardship_mentioned") and st.get("identity_verified")
+                and not (st.get("escalated") or st.get("pending_promise")
+                         or st.get("did_save_promise"))):
+            # Seen in the full run: the model told a borrower who had lost her job "we can
+            # plan for 5 December" six turns running and never handed over. The model gets
+            # HARDSHIP_TURNS replies after identity is checked; then code hands over.
+            waited = st.get("hardship_turns", 0)
+            if waited + 1 >= HARDSHIP_TURNS:     # the turn of the mention was the first
+                return self._say_now(result, self._callback(
+                    result, "The borrower spoke of hardship and the agent did not hand the "
+                            "case over."), out)
+            self.calls.set_state(self.call_id, hardship_turns=waited + 1)
+        return None
+
+    def _cues(self, text: str, result: TurnResult) -> list[dict]:
+        """System notes for this turn, from the borrower's words and the call's state.
+
+        Seen in the eval: half the English conversations got a Hindi reply at some point.
+        Code already follows the borrower's language; the model is told which it is. Two cues
+        from the borrower's words ride along: the eval showed the model answering fee
+        questions from memory and bargaining with borrowers who had lost a job. The language
+        note sits just before the borrower's message, never after it: as the last message it
+        made the model talk instead of act (43 "link sent" lines with no link in 55
+        conversations)."""
+        at = len(self._built_messages()) - 1
+        self._lead = (at, {"role": "user",
+                           "content": LANGUAGE_HINT.format(name=pack(self.language).name)})
+        hint = TERMS_HINT if asks_about_terms(text) else ""
+        if mentions_hardship(text):
+            self.calls.set_state(self.call_id, hardship_mentioned=True)
+        st = self.calls.get_state(self.call_id)
+        if st.get("hardship_mentioned") and not st.get("escalated"):
+            hint += HARDSHIP_HINT          # stays until the case is handed over
+        if self._last_agent_text() in self._offers():
+            hint += OFFER_HINT
+        extra: list[dict] = [{"role": "user", "content": CUE_NOTE + hint}] if hint else []
+        if not st.get("identity_verified", False) and ID_DETAIL.search(text):
+            # Seen live: the model answered a date of birth in words, was told to use the
+            # tool, and only then called it. Saying so up front saves that wasted round.
+            extra.append(ID_HINT)
+        note = st.get("supervisor_note")
+        if note:
+            self.calls.clear(self.call_id, "supervisor_note")
+            result.coach = note
+            extra.append({"role": "user", "content": COACH.format(note=note)})
+        return extra
+
+    def _end_turn(self, result: TurnResult, reply: str, prefix: str, out: Out | None,
+                  started: float) -> TurnResult:
         if prefix and (result.replaced or result.fallback):
             # The promise is saved and confirmed; a blocked or failed closing line would only
             # confuse ("noted ... sorry, I couldn't do that"). Seen in the simulated day.
@@ -458,26 +327,18 @@ class Agent:
         return self.say("promise_saved", read_back=saved["read_back"])
 
     def _run_model(self, result: TurnResult, extra: list[dict],
-                   out: _Out | None = None) -> str:
+                   out: Out | None = None) -> str:
         nudged = False
         seen: set[tuple[str, str]] = set()
         for _ in range(MAX_TOOL_ROUNDS):
             messages = self._messages() + extra
-            speaker = _Speaker(self, result, out, check_retry=not nudged) if out else None
+            speaker = Speaker(self, result, out, check_retry=not nudged) if out else None
             reply = self._ask(messages, result, speaker=speaker)
             if not reply.tool_calls and not nudged:
                 note = self._needs_retry(reply.content or "", result)
                 if note:
                     nudged = True
-                    if speaker and speaker.heard():
-                        # Part of the reply was already heard: keep it, and continue from it.
-                        self.calls.append(self.call_id, {"role": "assistant",
-                                                         "content": speaker.heard()})
-                        out.commit()
-                        messages = self._messages() + extra
-                    speaker = _Speaker(self, result, out, check_retry=False) if out else None
-                    reply = self._ask([*messages, note], result, retry=True, speaker=speaker,
-                                      force=self._force)
+                    reply, speaker = self._retry(note, extra, result, out, speaker, messages)
             if not reply.tool_calls:
                 text = (reply.content or "").strip()
                 if not text:
@@ -500,33 +361,51 @@ class Agent:
             seen |= calls
             if out:
                 out.still_listening()
-            self.calls.append(self.call_id, {
-                "role": "assistant", "content": reply.content or None,
-                "tool_calls": [{"id": tc.id, "type": "function",
-                                "function": {"name": tc.name, "arguments": tc.arguments}}
-                               for tc in reply.tool_calls]})
-            for tc in reply.tool_calls:
-                with child_span("execute_tool", gen_ai__operation__name="execute_tool",
-                                gen_ai__tool__name=tc.name) as span:
-                    done = self.tools.run(self.call_id, tc.name, tc.arguments)
-                    set_attrs(span, kisht__ok=done.ok,
-                              kisht__refused=None if done.ok else done.content.get("refused"))
-                    if not done.ok:
-                        mark_error(span, str(done.content.get("refused", "error")))
-                result.tool_calls.append(tc.name)
-                if not done.ok:
-                    result.refused.append(done.content.get("refused", "error"))
-                else:
-                    self.calls.set_state(self.call_id, **{f"did_{tc.name}": True})
-                    if tc.name in ENDING_ACTIONS:
-                        result.ended = tc.name
-                self.calls.append(self.call_id, done.as_message(tc.id))
+            self._run_tools(reply, result)
         self._log("stuck", {}, "error")
         return self._stuck(result)
 
+    def _retry(self, note: dict, extra: list[dict], result: TurnResult, out: Out | None,
+               speaker: Speaker | None, messages: list[dict]) -> tuple[Any, Speaker | None]:
+        """One more try, with a system note saying what was wrong with the first reply."""
+        if out and speaker and speaker.heard():
+            # Part of the reply was already heard: keep it, and continue from it.
+            self.calls.append(self.call_id, {"role": "assistant", "content": speaker.heard()})
+            out.commit()
+            messages = self._messages() + extra
+        speaker = Speaker(self, result, out, check_retry=False) if out else None
+        reply = self._ask([*messages, note], result, retry=True, speaker=speaker,
+                          force=self._force)
+        return reply, speaker
+
+    def _run_tools(self, reply: Any, result: TurnResult) -> None:
+        """Every tool call goes through the guard; the results go into the transcript."""
+        self.calls.append(self.call_id, {
+            "role": "assistant", "content": reply.content or None,
+            "tool_calls": [{"id": tc.id, "type": "function",
+                            "function": {"name": tc.name, "arguments": tc.arguments}}
+                           for tc in reply.tool_calls]})
+        for tc in reply.tool_calls:
+            with child_span("execute_tool", gen_ai__operation__name="execute_tool",
+                            gen_ai__tool__name=tc.name) as span:
+                done = self.tools.run(self.call_id, tc.name, tc.arguments)
+                refused = None if done.ok else done.content.get("refused", "error")
+                set_attrs(span, kisht__ok=done.ok,
+                          kisht__refused=None if done.ok else done.content.get("refused"))
+                if refused:
+                    mark_error(span, str(refused))
+            result.tool_calls.append(tc.name)
+            if refused:
+                result.refused.append(refused)
+            else:
+                self.calls.set_state(self.call_id, **{f"did_{tc.name}": True})
+                if tc.name in ENDING_ACTIONS:
+                    result.ended = tc.name
+            self.calls.append(self.call_id, done.as_message(tc.id))
+
     # ---------- when the model cannot finish: code does, or hands over ----------
 
-    def _say_now(self, result: TurnResult, reply: str, out: _Out | None) -> TurnResult:
+    def _say_now(self, result: TurnResult, reply: str, out: Out | None) -> TurnResult:
         """A turn code answers by itself: no model call."""
         result.reply = reply
         self.calls.append(self.call_id, {"role": "assistant", "content": reply})
@@ -627,7 +506,7 @@ class Agent:
             return "stall_retry", NOTE
         if (not self.calls.get(self.call_id, "identity_verified", False)
                 and "verify_identity" not in result.tool_calls
-                and _ID_DETAIL.search(self._last_user_text())):
+                and ID_DETAIL.search(self._last_user_text())):
             return "unchecked_identity_retry", UNCHECKED_ID
         if claims_link_sent(text) and "send_payment_link" not in result.tool_calls:
             return "unbacked_claim_retry", UNBACKED
@@ -711,7 +590,7 @@ class Agent:
         verified = self.calls.get(self.call_id, "identity_verified", False)
         if not verified and leaks_account(text, self._account_amounts()):
             return "leak_before_identity"
-        if not verified and _ID_DETAIL.search(text):
+        if not verified and ID_DETAIL.search(text):
             # Seen live: "is your date of birth 1990-05-15?" (invented). The agent asks for
             # the detail; it never offers one, real or not.
             return "guessed_identity"
@@ -832,7 +711,7 @@ class Agent:
                               self.calls.get(self.call_id, "channel", "chat"))
 
     def _ask(self, messages: list[dict], result: TurnResult, retry: bool = False,
-             speaker: _Speaker | None = None, force: str | None = None):
+             speaker: Speaker | None = None, force: str | None = None):
         with child_span("chat", gen_ai__operation__name="chat",
                         gen_ai__request__model=getattr(self.model, "name", "model"),
                         kisht__retry=retry or None) as span:

@@ -1,4 +1,4 @@
-// Typed client for the Kisht contact-centre API (src/kisht/api.py).
+// Typed client for the Kisht contact-centre API (src/kisht/api/, one module per page).
 
 export type Call = {
   call_id: string;

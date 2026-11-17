@@ -49,8 +49,9 @@ def client(guard, calls, ledger, account):
 
 def test_chat_then_call_log_trace_review_and_desk(client, monkeypatch):
     c, (bid, _) = client
-    from kisht import api
-    monkeypatch.setattr(api.threading, "Thread", _InlineThread)       # review runs inline
+    import threading
+
+    monkeypatch.setattr(threading, "Thread", _InlineThread)       # review runs inline
 
     start = c.post("/api/chat/start", json={"borrower_id": bid}).json()
     cid = start["call_id"]
@@ -97,12 +98,13 @@ class _InlineThread:
 
 def test_health_reports_what_the_dashboard_depends_on(client, monkeypatch):
     c, _ = client
-    from kisht import api
+
+    import httpx
 
     def down(*a, **k):
-        raise api.httpx.ConnectError("refused")
+        raise httpx.ConnectError("refused")
 
-    monkeypatch.setattr(api.httpx, "get", down)
+    monkeypatch.setattr(httpx, "get", down)
     h = c.get("/api/health").json()
     assert h["model"]["ok"] is False and h["call_state"]["ok"] is True
     assert set(h["clock"]) == {"now", "fixed", "window", "open"}

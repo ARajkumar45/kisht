@@ -1,50 +1,46 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Borrower } from "../api";
-import { Card, LANG, Page, human, press, rupees, useLoad } from "../ui";
+import { Card, LANG, Page, human, press, rupees, useAction, useDebounced, useLoad } from "../ui";
 
 type Msg = { from: "agent" | "me"; text: string; meta?: string[]; bad?: string[] };
 
 export default function Chat() {
   const [q, setQ] = useState("");
-  const { data: people } = useLoad(() => api.borrowers(q), [q]);
+  const search = useDebounced(q);          // one request when typing pauses, not per key
+  const { data: people } = useLoad(() => api.borrowers(search), [search]);
   const [who, setWho] = useState<Borrower | null>(null);
   const [callId, setCallId] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [ended, setEnded] = useState<string | null>(null);
+  const { busy, error: err, run } = useAction();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, busy]);
 
-  const start = async (b: Borrower) => {
-    setWho(b); setMsgs([]); setEnded(null); setErr(null); setBusy(true);
-    try {
+  const start = (b: Borrower) => {
+    if (busy) return;                 // one conversation starts at a time
+    setWho(b); setMsgs([]); setEnded(null); setCallId(null);
+    void run(async () => {
       const r = await api.chatStart(b.id);
       setCallId(r.call_id);
       setMsgs([{ from: "agent", text: r.greeting }]);
-    } catch (e) {
-      setErr((e as Error).message); setCallId(null);
-    } finally { setBusy(false); }
+    });
   };
-  const send = async () => {
-    if (!callId || !text.trim()) return;
+  const close = async (id: string) => setEnded((await api.chatEnd(id)).outcome);
+  const send = () => {
     const said = text.trim();
-    setText(""); setMsgs((m) => [...m, { from: "me", text: said }]); setBusy(true);
-    try {
+    if (!callId || !said || busy) return;
+    setText(""); setMsgs((m) => [...m, { from: "me", text: said }]);
+    void run(async () => {
       const r = await api.chatSay(callId, said);
       setMsgs((m) => [...m, { from: "agent", text: r.reply, meta: [...r.tools, `${r.seconds}s`], bad: [...r.refused, ...r.replaced] }]);
-      if (r.ended) await finish();
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+      if (r.ended) await close(callId);
+    });
   };
-  const finish = async () => {
-    if (!callId) return;
-    const r = await api.chatEnd(callId);
-    setEnded(r.outcome);
-  };
+  const finish = () => { if (callId && !busy) void run(() => close(callId)); };
 
   return (
     <Page title="Test chat" sub="Be the borrower. The real agent, guard and ledger answer; the conversation appears in the call log with its trace and review.">
@@ -86,7 +82,7 @@ export default function Chat() {
           <form className="phone-input" onSubmit={(e) => { e.preventDefault(); send(); }}>
             <input aria-label="Message as the borrower" disabled={!callId || !!ended || busy} placeholder={callId ? "Type as the borrower… (e.g. Haan, main hoon)" : ""} value={text} onChange={(e) => setText(e.target.value)} />
             <button disabled={!callId || !!ended || busy || !text.trim()}>Send</button>
-            <button type="button" className="secondary" disabled={!callId || !!ended} onClick={finish}>End</button>
+            <button type="button" className="secondary" disabled={!callId || !!ended || busy} onClick={finish}>End</button>
           </form>
         </div>
       </div>

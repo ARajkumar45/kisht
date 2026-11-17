@@ -88,8 +88,9 @@ def _one_call(c, bid):
 
 def test_human_qa_review_and_agreement_with_the_ai(client, monkeypatch):  # noqa: F811
     c, (bid, _) = client
-    from kisht import api
-    monkeypatch.setattr(api.threading, "Thread", _InlineThread)
+    import threading
+
+    monkeypatch.setattr(threading, "Thread", _InlineThread)
     cid = _one_call(c, bid)
     ai = {q["id"]: q["result"] for q in c.get(f"/api/calls/{cid}").json()["review"]["qa"]}
     assert ai["introduced"] == "pass"
@@ -111,8 +112,9 @@ def test_human_qa_review_and_agreement_with_the_ai(client, monkeypatch):  # noqa
 
 def test_desk_deadline_and_resolution_becomes_memory(client, monkeypatch, ledger):  # noqa: F811
     c, (bid, _) = client
-    from kisht import api
-    monkeypatch.setattr(api.threading, "Thread", _InlineThread)
+    import threading
+
+    monkeypatch.setattr(threading, "Thread", _InlineThread)
     _one_call(c, bid)
     case = c.get("/api/desk").json()[0]
     assert case["sla_hours"] == 4 and case["age_hours"] < 1 and case["breached"] is False
@@ -129,8 +131,9 @@ def test_desk_deadline_and_resolution_becomes_memory(client, monkeypatch, ledger
 
 def test_overview_containment_language_table_and_csv(client, monkeypatch):  # noqa: F811
     c, (bid, _) = client
-    from kisht import api
-    monkeypatch.setattr(api.threading, "Thread", _InlineThread)
+    import threading
+
+    monkeypatch.setattr(threading, "Thread", _InlineThread)
     cid = _one_call(c, bid)
     ov = c.get("/api/overview").json()
     assert ov["rates"]["containment"] == 0.0                         # the one call went to a human

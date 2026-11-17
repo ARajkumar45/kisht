@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Call } from "../api";
-import { Badge, Card, CallLink, Confirm, LANG, Loading, Page, human, time, useLoad } from "../ui";
+import { Badge, Card, CallLink, Confirm, LANG, Loading, Page, human, time, useAction, useLoad } from "../ui";
 
 const ALERT: Record<string, string> = {
   banned_phrase: "Threat or banned phrase blocked",
@@ -19,20 +19,16 @@ const ALERT: Record<string, string> = {
 function Controls({ call, onDone }: { call: Call; onDone: () => void }) {
   const [note, setNote] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
+  const action = useAction();
+  const { busy } = action;
   const by = "Supervisor";
   const run = async (f: () => Promise<unknown>, ok: string) => {
-    setBusy(true);
-    try {
-      await f();
+    setMsg(null);
+    if (await action.run(f)) {
       setMsg(ok);
       setNote("");
       onDone();
-    } catch (e) {
-      setMsg((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
   if ((call.outcome ?? "").startsWith("escalated")) return null;
@@ -48,6 +44,7 @@ function Controls({ call, onDone }: { call: Call; onDone: () => void }) {
         The AI stops replying and the case goes to the human desk. This cannot be undone from here.
       </Confirm>
       {msg && <div className="muted small" role="status">{msg}</div>}
+      {action.error && <div className="error" role="alert">{action.error}</div>}
     </div>
   );
 }

@@ -41,6 +41,34 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[] = [], pollMs?
   return { data, error, refresh };
 }
 
+/** One user action at a time: `busy` while it runs, `error` if it failed. `run` resolves to
+ * true on success, so the caller can follow up (clear a field, close a panel). */
+export function useAction() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const run = useCallback(async (f: () => Promise<unknown>): Promise<boolean> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await f();
+      return true;
+    } catch (e) {
+      if (mounted.current) setError(e instanceof Error ? e.message : String(e));
+      return false;
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }, []);
+  return { busy, error, setError, run };
+}
+
 /** The value, a moment after it stops changing (search boxes). */
 export function useDebounced<T>(value: T, ms = 250): T {
   const [v, setV] = useState(value);

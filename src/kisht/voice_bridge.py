@@ -26,6 +26,7 @@ import re
 import threading
 import time
 import uuid
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -37,6 +38,7 @@ from kisht.adapters.llm import health_check
 from kisht.agent import Agent, CallerGone, TurnResult, prepare
 from kisht.guard import GuardRefused, PolicyGuard
 from kisht.insights import InsightsStore
+from kisht.keyed_locks import KeyedLocks
 from kisht.knowledge import Agreement
 from kisht.languages import say
 from kisht.lender import ConfigError, LenderRegistry
@@ -51,9 +53,6 @@ MAX_TEXT = 2000                     # characters of one utterance; more is not s
 TOKEN_ENV = "KISHT_BRIDGE_TOKEN"    # if set, every request must carry it as a bearer token
 
 
-# The voice layer dropped this turn (the caller spoke over us): stop working on it. The same
-# exception the agent raises when it asks, before running a tool, whether anyone still listens.
-_CallerGone = CallerGone
 CHUNK_CHARS = 40
 DEFAULT_RUN = "unpatched-default"
 
@@ -71,12 +70,10 @@ class VoiceBridge:
         self.calls = calls
         self.model = model
         self.agreements = agreements or {}
-        self._locks: dict[str, threading.Lock] = {}
-        self._locks_guard = threading.Lock()
+        self.locks = KeyedLocks()
 
     def lock_for(self, run_id: str) -> threading.Lock:
-        with self._locks_guard:
-            return self._locks.setdefault(run_id, threading.Lock())
+        return self.locks.get(run_id)
 
     @staticmethod
     def parse_target(model_field: str) -> tuple[str, str]:
@@ -126,7 +123,7 @@ class VoiceBridge:
             return TurnResult(reply=refusal or "", ended="refused"), None
         try:
             result = agent.handle(text, on_say=on_say)
-        except _CallerGone:
+        except CallerGone:
             raise
         except Exception:
             # Redis hiccup, a locked database, a bug: the caller must still hear something,
@@ -141,8 +138,7 @@ class VoiceBridge:
         if result.ended:
             # In the background: the caller hears the last reply now, not after the case note.
             finish_in_background(agent, self.reviewer_model)
-            with self._locks_guard:
-                self._locks.pop(run_id, None)       # the call is over: do not keep its lock
+            self.locks.drop(run_id)          # the call is over: do not keep its lock
         agent.guard.audit.record(call_id=agent.call_id, tenant_id=agent.lender.id,
                                  action="voice_turn", outcome="ok",
                                  args={"run_id": run_id, "new_call": new, "tools": result.tool_calls,
@@ -192,28 +188,143 @@ def _chunk(rid: str, model: str, delta: dict, finish: str | None = None) -> str:
         ensure_ascii=False) + "\n\n"
 
 
+@dataclass
+class TurnRequest:
+    """One OpenAI-style request from the voice layer, read and checked."""
+    target: str               # "<lender_id>:<borrower_id>"
+    run_id: str               # one per call
+    text: str                 # the caller's latest words
+    stream: bool
+    rid: str = field(default_factory=lambda: "chatcmpl-" + uuid.uuid4().hex[:12])
+
+
+def read_turn(bridge: VoiceBridge, body: dict) -> TurnRequest:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        raise HTTPException(400, "messages must be a list")
+    text = last_user_text([m for m in messages if isinstance(m, dict)])
+    if text is None:
+        raise HTTPException(400, "no user message in the request")
+    target = str(body.get("model") or "")
+    known_target(bridge, target)
+    return TurnRequest(target=target, run_id=str(body.get("user") or DEFAULT_RUN)[:200],
+                       text=text[:MAX_TEXT], stream=bool(body.get("stream", False)))
+
+
+def known_target(bridge: VoiceBridge, target: str) -> tuple[str, str]:
+    try:
+        lender_id, borrower_id = bridge.parse_target(target)
+        bridge.lenders.get(lender_id)
+    except ConfigError as e:
+        raise HTTPException(404, str(e)) from None
+    return lender_id, borrower_id
+
+
+async def json_object(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "the body must be JSON") from None
+    if not isinstance(body, dict):
+        raise HTTPException(400, "the body must be a JSON object")
+    return body
+
+
+def authoriser(token: str):
+    """With KISHT_BRIDGE_TOKEN set (do this before opening a tunnel), every request must
+    carry it; the voice layer sends it as its LLM API key."""
+    expected = f"Bearer {token}".encode()
+
+    def authorise(request: Request) -> None:
+        if token and not hmac.compare_digest(
+                request.headers.get("authorization", "").encode(), expected):
+            raise HTTPException(401, "missing or wrong bearer token")
+    return authorise
+
+
+async def answer_whole(bridge: VoiceBridge, req: TurnRequest, request: Request,
+                       lock: threading.Lock) -> Any:
+    try:
+        try:
+            result, call_id = await run_in_threadpool(bridge.turn, req.run_id, req.target,
+                                                      req.text)
+        except ConfigError as e:
+            raise HTTPException(404, str(e)) from None
+        if call_id and await request.is_disconnected():
+            bridge.discard_reply(call_id)
+            return JSONResponse({"skipped": "cancelled_after_reply"}, status_code=499)
+    finally:
+        lock.release()
+    return {"id": req.rid, "object": "chat.completion", "created": int(time.time()),
+            "model": req.target, "choices": [{"index": 0, "finish_reason": "stop",
+                                              "message": {"role": "assistant",
+                                                          "content": result.reply}}]}
+
+
+async def answer_streamed(bridge: VoiceBridge, req: TurnRequest,
+                          lock: threading.Lock) -> StreamingResponse:
+    """The turn runs in its own thread and hands over each sentence when it is ready. Until
+    the first one arrives nothing has been sent, so an unknown borrower can still be answered
+    with a 404."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    state = {"gone": False}
+
+    def hand_over(piece: str) -> None:
+        if state["gone"]:
+            raise CallerGone        # stops the model call in flight; nobody is listening
+        loop.call_soon_threadsafe(queue.put_nowait, piece)
+
+    hand_over.alive = lambda: not state["gone"]     # asked before any tool runs
+
+    def work() -> None:
+        try:
+            _, call_id = bridge.turn(req.run_id, req.target, req.text, on_say=hand_over)
+            if call_id and state["gone"]:
+                bridge.discard_reply(call_id)     # the caller never heard all of it
+        except CallerGone:
+            pass                                  # no reply was saved for this turn
+        except Exception as e:
+            if not isinstance(e, ConfigError):
+                log.exception("voice turn failed before it started (run %s)", req.run_id)
+            loop.call_soon_threadsafe(queue.put_nowait, e)
+        finally:
+            lock.release()
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    threading.Thread(target=work, daemon=True).start()
+    first = await queue.get()
+    if isinstance(first, ConfigError):
+        raise HTTPException(404, str(first)) from None
+    if isinstance(first, Exception):
+        raise HTTPException(500, "turn failed") from first
+
+    async def stream():
+        item = first
+        try:
+            yield _chunk(req.rid, req.target, {"role": "assistant", "content": ""})
+            sent = False
+            while item is not None and not isinstance(item, Exception):
+                for piece in chunk_text((" " if sent else "") + item):
+                    yield _chunk(req.rid, req.target, {"content": piece})
+                sent = True
+                item = await queue.get()
+            yield _chunk(req.rid, req.target, {}, finish="stop")
+            yield "data: [DONE]\n\n"
+        finally:
+            # Reached early when Bolna drops the request (the caller spoke over us).
+            state["gone"] = item is not None
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache"})
+
+
 def create_app(bridge: VoiceBridge, *, require_token: bool = False) -> FastAPI:
     app = FastAPI(title="kisht voice bridge")
-
     token = os.environ.get(TOKEN_ENV, "")
     if require_token and not token:      # production: never serve borrowers to an open port
         raise RuntimeError(f"{TOKEN_ENV} is not set; the bridge will not start without it")
-
-    def authorise(request: Request) -> None:
-        """With KISHT_BRIDGE_TOKEN set (do this before opening a tunnel), every request must
-        carry it; the voice layer sends it as its LLM API key."""
-        if token and not hmac.compare_digest(
-                request.headers.get("authorization", ""), f"Bearer {token}"):
-            raise HTTPException(401, "missing or wrong bearer token")
-
-    async def json_object(request: Request) -> dict:
-        try:
-            body = await request.json()
-        except ValueError:
-            raise HTTPException(400, "the body must be JSON") from None
-        if not isinstance(body, dict):
-            raise HTTPException(400, "the body must be a JSON object")
-        return body
+    authorise = authoriser(token)
 
     @app.get("/health")
     async def health(deep: bool = False) -> Any:
@@ -223,17 +334,9 @@ def create_app(bridge: VoiceBridge, *, require_token: bool = False) -> FastAPI:
         if deep:
             r = await run_in_threadpool(health_check, bridge.model)
             return JSONResponse(r, status_code=200 if r["ok"] else 503)
-
-        def cheap() -> dict[str, bool]:
-            try:
-                redis_ok = bool(bridge.calls.r.ping())
-            except Exception:  # noqa: BLE001 - any failure means "down"
-                redis_ok = False
-            reach = getattr(bridge.model, "reachable", None)
-            return {"call_state": redis_ok, "model": bool(reach()) if reach else True}
-
-        r = await run_in_threadpool(cheap)
-        return JSONResponse({"ok": all(r.values()), **r}, status_code=200 if all(r.values()) else 503)
+        r = await run_in_threadpool(_cheap_health, bridge)
+        return JSONResponse({"ok": all(r.values()), **r},
+                            status_code=200 if all(r.values()) else 503)
 
     @app.post("/prepare")
     async def prepare_call(request: Request) -> Any:
@@ -242,11 +345,7 @@ def create_app(bridge: VoiceBridge, *, require_token: bool = False) -> FastAPI:
         first reply of the call does not wait for it."""
         authorise(request)
         body = await json_object(request)
-        try:
-            lender_id, borrower_id = bridge.parse_target(str(body.get("model") or ""))
-            bridge.lenders.get(lender_id)
-        except ConfigError as e:
-            raise HTTPException(404, str(e)) from None
+        lender_id, borrower_id = known_target(bridge, str(body.get("model") or ""))
         ok = await run_in_threadpool(prepare, bridge.model, bridge.guards[lender_id], borrower_id)
         if not ok:
             raise HTTPException(404, f"nothing to prepare for {borrower_id!r}")
@@ -255,97 +354,24 @@ def create_app(bridge: VoiceBridge, *, require_token: bool = False) -> FastAPI:
     @app.post("/v1/chat/completions")
     async def completions(request: Request):
         authorise(request)
-        body = await json_object(request)
-        target = str(body.get("model") or "")
-        run_id = str(body.get("user") or DEFAULT_RUN)[:200]
-        messages = body.get("messages")
-        if not isinstance(messages, list):
-            raise HTTPException(400, "messages must be a list")
-        text = last_user_text([m for m in messages if isinstance(m, dict)])
-        if text is None:
-            raise HTTPException(400, "no user message in the request")
-        text = text[:MAX_TEXT]
-        try:
-            lender_id, _ = bridge.parse_target(target)
-            bridge.lenders.get(lender_id)
-        except ConfigError as e:
-            raise HTTPException(404, str(e)) from None
-        lock = bridge.lock_for(run_id)
-        rid = "chatcmpl-" + uuid.uuid4().hex[:12]
+        req = read_turn(bridge, await json_object(request))
+        lock = bridge.lock_for(req.run_id)
         if not await run_in_threadpool(lock.acquire, True, LOCK_WAIT_S):
             raise HTTPException(503, "the previous turn of this call is still running")
         if await request.is_disconnected():
             lock.release()
             return JSONResponse({"skipped": "cancelled"}, status_code=499)
-
-        if not body.get("stream", False):
-            try:
-                try:
-                    result, call_id = await run_in_threadpool(bridge.turn, run_id, target, text)
-                except ConfigError as e:
-                    raise HTTPException(404, str(e)) from None
-                if call_id and await request.is_disconnected():
-                    bridge.discard_reply(call_id)
-                    return JSONResponse({"skipped": "cancelled_after_reply"}, status_code=499)
-            finally:
-                lock.release()
-            return {"id": rid, "object": "chat.completion", "created": int(time.time()),
-                    "model": target, "choices": [{"index": 0, "finish_reason": "stop",
-                                                  "message": {"role": "assistant",
-                                                              "content": result.reply}}]}
-
-        # Streamed: the turn runs in its own thread and hands over each sentence when it is
-        # ready. Until the first one arrives nothing has been sent, so an unknown borrower can
-        # still be answered with a 404.
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-        state = {"gone": False}
-
-        def hand_over(piece: str) -> None:
-            if state["gone"]:
-                raise _CallerGone       # stops the model call in flight; nobody is listening
-            loop.call_soon_threadsafe(queue.put_nowait, piece)
-
-        hand_over.alive = lambda: not state["gone"]     # asked before any tool runs
-
-        def work() -> None:
-            try:
-                _, call_id = bridge.turn(run_id, target, text, on_say=hand_over)
-                if call_id and state["gone"]:
-                    bridge.discard_reply(call_id)     # the caller never heard all of it
-            except _CallerGone:
-                pass                                  # no reply was saved for this turn
-            except Exception as e:
-                if not isinstance(e, ConfigError):
-                    log.exception("voice turn failed before it started (run %s)", run_id)
-                loop.call_soon_threadsafe(queue.put_nowait, e)
-            finally:
-                lock.release()
-                loop.call_soon_threadsafe(queue.put_nowait, None)
-
-        threading.Thread(target=work, daemon=True).start()
-        first = await queue.get()
-        if isinstance(first, ConfigError):
-            raise HTTPException(404, str(first)) from None
-        if isinstance(first, Exception):
-            raise HTTPException(500, "turn failed") from first
-
-        async def stream():
-            try:
-                yield _chunk(rid, target, {"role": "assistant", "content": ""})
-                item, sent = first, False
-                while item is not None and not isinstance(item, Exception):
-                    for piece in chunk_text((" " if sent else "") + item):
-                        yield _chunk(rid, target, {"content": piece})
-                    sent = True
-                    item = await queue.get()
-                yield _chunk(rid, target, {}, finish="stop")
-                yield "data: [DONE]\n\n"
-            finally:
-                # Reached early when Bolna drops the request (the caller spoke over us).
-                state["gone"] = item is not None
-
-        return StreamingResponse(stream(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache"})
+        if req.stream:
+            return await answer_streamed(bridge, req, lock)
+        return await answer_whole(bridge, req, request, lock)
 
     return app
+
+
+def _cheap_health(bridge: VoiceBridge) -> dict[str, bool]:
+    try:
+        redis_ok = bool(bridge.calls.r.ping())
+    except Exception:  # noqa: BLE001 - any failure means "down"
+        redis_ok = False
+    reach = getattr(bridge.model, "reachable", None)
+    return {"call_state": redis_ok, "model": bool(reach()) if reach else True}

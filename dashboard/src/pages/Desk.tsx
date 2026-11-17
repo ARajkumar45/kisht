@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Answer, type Assist, type DeskItem } from "../api";
-import { Badge, Card, CallLink, LANG, Loading, Page, human, press, rupees, time, useLoad } from "../ui";
+import { Badge, Card, CallLink, LANG, Loading, Page, human, press, rupees, time, useAction, useLoad } from "../ui";
 
 const STATUS_TONE: Record<string, string> = { open: "bad", in_progress: "warn", resolved: "good" };
 
@@ -55,21 +55,9 @@ export default function Desk() {
 
 function CaseView({ item, onChange }: { item: DeskItem; onChange: () => void }) {
   const [assist, setAssist] = useState<Assist | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [assignee, setAssignee] = useState(item.assignee ?? "");
   const [resolution, setResolution] = useState(item.resolution ?? "");
-  const run = async (f: () => Promise<unknown>) => {
-    setBusy(true);
-    setErr(null);
-    try {
-      await f();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, error: err, run } = useAction();
   return (
     <div className="stack">
       <Card title={item.borrower_name} right={<Badge tone={STATUS_TONE[item.status]}>{human(item.status)}</Badge>}>
@@ -119,13 +107,14 @@ function CaseView({ item, onChange }: { item: DeskItem; onChange: () => void }) 
 function AskAgreement() {
   const [q, setQ] = useState("");
   const [a, setA] = useState<Answer | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, error, run } = useAction();
   return (
     <Card title="Ask the loan agreement">
-      <form className="form-row" onSubmit={async (e) => { e.preventDefault(); setBusy(true); try { setA(await api.ask(q)); } finally { setBusy(false); } }}>
+      <form className="form-row" onSubmit={(e) => { e.preventDefault(); void run(async () => setA(await api.ask(q))); }}>
         <input aria-label="Question about the loan agreement" placeholder="e.g. What is the late fee? Can they foreclose early?" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button disabled={busy || !q}>{busy ? "…" : "Ask"}</button>
+        <button disabled={busy || !q.trim()}>{busy ? "…" : "Ask"}</button>
       </form>
+      {error && <div className="error" role="alert">{error}</div>}
       {a && (
         <>
           <p>{a.answer}</p>

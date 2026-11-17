@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type QAResult, type Review, type Span, type Turn } from "../api";
-import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, press, rupees, useLoad } from "../ui";
+import { Badge, Card, LANG, Loading, OutcomeBadge, Page, duration, human, press, rupees, useAction, useLoad } from "../ui";
 
 export default function CallDetail() {
   const { id = "" } = useParams();
@@ -122,8 +122,7 @@ function HumanReview({ callId, review, onSaved }: { callId: string; review: Revi
   const [open, setOpen] = useState(false);
   const [by, setBy] = useState(review.qa.find((q) => q.human)?.human?.by ?? "");
   const [marks, setMarks] = useState<Record<string, QAResult>>(() => Object.fromEntries(review.qa.map((q) => [q.id, q.human?.result ?? q.result])));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const { busy, error: err, run } = useAction();
   if (!open) {
     return (
       <div className="form-row">
@@ -133,16 +132,9 @@ function HumanReview({ callId, review, onSaved }: { callId: string; review: Revi
     );
   }
   const save = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      await api.humanQa(callId, marks, by.trim() || "reviewer");
+    if (await run(() => api.humanQa(callId, marks, by.trim() || "reviewer"))) {
       setOpen(false);
       onSaved();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
   return (
